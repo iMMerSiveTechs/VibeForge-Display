@@ -219,4 +219,4 @@ VibeForge Display uses macOS's `CGVirtualDisplay` API to create virtual monitors
 
 ## License
 
-Copyright 2024 VibeForge. All rights reserved.
+Copyright 2025 VibeForge. All rights reserved.
