@@ -17,11 +17,8 @@ final class VirtualDisplayService {
     private let logService: LogService
     private let configsFileName = "virtual_screens.json"
 
-    // Standard PPI for physical size calculation
+    // Standard PPI for physical size calculation (pixels to mm)
     private let standardPPI: Double = 110.0
-    // Equivalent to a 27-inch display for safe pixel density
-    private let physicalWidth27Inch: Double = 597.0
-    private let physicalHeight27Inch: Double = 336.0
 
     init(persistence: PersistenceManager, logService: LogService) {
         self.persistence = persistence

@@ -161,7 +161,7 @@ final class SurfaceService {
         guard persistence.exists(widgetStorageFileName) else { return }
         do {
             let storages = try persistence.load([SurfaceWidgetStorage].self, from: widgetStorageFileName)
-            widgetStorage = Dictionary(uniqueKeysWithValues: storages.map { ($0.surfaceID, $0) })
+            widgetStorage = Dictionary(storages.map { ($0.surfaceID, $0) }, uniquingKeysWith: { _, latest in latest })
         } catch {
             logService.log(.error, "Failed to load widget data", detail: error.localizedDescription)
         }
