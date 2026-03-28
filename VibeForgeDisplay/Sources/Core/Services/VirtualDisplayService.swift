@@ -2,9 +2,10 @@ import Foundation
 import CoreGraphics
 
 // CGVirtualDisplay extensions for Sendable compliance
-extension CGVirtualDisplayDescriptor: @unchecked @retroactive Sendable {}
-extension CGVirtualDisplay: @unchecked @retroactive Sendable {}
-extension CGVirtualDisplaySettings: @unchecked @retroactive Sendable {}
+// These ObjC classes come from our bridging header, not a separate module
+extension CGVirtualDisplayDescriptor: @unchecked Sendable {}
+extension CGVirtualDisplay: @unchecked Sendable {}
+extension CGVirtualDisplaySettings: @unchecked Sendable {}
 
 @MainActor
 @Observable

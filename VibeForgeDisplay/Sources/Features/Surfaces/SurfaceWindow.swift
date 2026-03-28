@@ -48,7 +48,7 @@ final class SurfaceWindow: NSPanel {
         window.surfaceID = config.id
         window.surfaceService = service
 
-        NotificationCenter.default.addObserver(
+        window.moveObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification,
             object: window,
             queue: .main
@@ -59,7 +59,7 @@ final class SurfaceWindow: NSPanel {
             }
         }
 
-        NotificationCenter.default.addObserver(
+        window.resizeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didResizeNotification,
             object: window,
             queue: .main
@@ -74,8 +74,18 @@ final class SurfaceWindow: NSPanel {
     }
 
     var surfaceID: UUID = UUID()
-    var surfaceService: SurfaceService?
+    weak var surfaceService: SurfaceService?
+    private var moveObserver: Any?
+    private var resizeObserver: Any?
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func close() {
+        if let moveObserver { NotificationCenter.default.removeObserver(moveObserver) }
+        if let resizeObserver { NotificationCenter.default.removeObserver(resizeObserver) }
+        moveObserver = nil
+        resizeObserver = nil
+        super.close()
+    }
 }

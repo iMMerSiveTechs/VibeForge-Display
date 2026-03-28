@@ -1,11 +1,15 @@
 import Foundation
 
 struct DisplayModeInfo: Identifiable, Codable, Sendable {
-    let id: UUID
     let width: Int
     let height: Int
     let refreshRate: Double
     let isUsableForDesktop: Bool
+
+    // Deterministic ID based on mode properties to avoid ForEach identity churn
+    var id: String {
+        "\(width)x\(height)@\(refreshRate)_\(isUsableForDesktop)"
+    }
 
     var label: String {
         var parts = ["\(width) x \(height)"]
@@ -16,7 +20,6 @@ struct DisplayModeInfo: Identifiable, Codable, Sendable {
     }
 
     init(width: Int, height: Int, refreshRate: Double, isUsableForDesktop: Bool) {
-        self.id = UUID()
         self.width = width
         self.height = height
         self.refreshRate = refreshRate
