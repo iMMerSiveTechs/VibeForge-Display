@@ -7,14 +7,17 @@ final class AppState {
     let screenService: ScreenService
     let modeService: ModeService
     let surfaceService: SurfaceService
+    let virtualDisplayService: VirtualDisplayService
     let persistence: PersistenceManager
 
-    var selectedTab: SidebarTab = .screens
+    var selectedTab: SidebarTab = .virtualScreens
 
     enum SidebarTab: String, CaseIterable, Identifiable {
         case screens = "Screens"
+        case virtualScreens = "Virtual Screens"
         case modes = "Modes"
         case surfaces = "Surfaces"
+        case routes = "Routes"
         case logs = "Logs"
         case settings = "Settings"
 
@@ -23,8 +26,10 @@ final class AppState {
         var icon: String {
             switch self {
             case .screens: return "display"
+            case .virtualScreens: return "plus.display"
             case .modes: return "slider.horizontal.3"
             case .surfaces: return "rectangle.on.rectangle.angled"
+            case .routes: return "point.3.connected.trianglepath.dotted"
             case .logs: return "list.bullet.rectangle"
             case .settings: return "gear"
             }
@@ -37,12 +42,14 @@ final class AppState {
         let screenService = ScreenService(logService: logService)
         let modeService = ModeService(persistence: persistence, logService: logService)
         let surfaceService = SurfaceService(persistence: persistence, logService: logService)
+        let virtualDisplayService = VirtualDisplayService(persistence: persistence, logService: logService)
 
         self.persistence = persistence
         self.logService = logService
         self.screenService = screenService
         self.modeService = modeService
         self.surfaceService = surfaceService
+        self.virtualDisplayService = virtualDisplayService
 
         logService.log(.system, "VibeForge Display launched", detail: "v\(VFConstants.appVersion)")
     }

@@ -35,3 +35,4 @@ targets:
       base:
         LD_RUNPATH_SEARCH_PATHS:
           - "@executable_path/../Frameworks"
+        SWIFT_OBJC_BRIDGING_HEADER: VibeForgeDisplay/Sources/Bridge/VibeForgeDisplay-Bridging-Header.h

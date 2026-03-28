@@ -9,13 +9,13 @@ struct MenuBarView: View {
             Divider()
             screensSummary
             Divider()
-            surfacesSummary
+            virtualDisplaysSummary
             Divider()
             recentEventSection
             Divider()
             actionsSection
         }
-        .frame(width: 280)
+        .frame(width: 300)
     }
 
     private var headerSection: some View {
@@ -36,7 +36,7 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: VFTheme.Spacing.xs) {
             Label("\(appState.screenService.screens.count) Screen(s) Connected", systemImage: "display")
                 .font(VFTheme.Typography.body)
-            ForEach(appState.screenService.screens.prefix(3)) { screen in
+            ForEach(appState.screenService.screens.prefix(4)) { screen in
                 HStack(spacing: VFTheme.Spacing.xs) {
                     Circle()
                         .fill(screen.isMain ? VFTheme.Colors.accent : VFTheme.Colors.textTertiary)
@@ -54,12 +54,41 @@ struct MenuBarView: View {
         .padding(VFTheme.Spacing.md)
     }
 
-    private var surfacesSummary: some View {
-        let configs = appState.surfaceService.configs
-        let openCount = configs.filter(\.isOpen).count
+    private var virtualDisplaysSummary: some View {
+        let total = appState.virtualDisplayService.configs.count
+        let active = appState.virtualDisplayService.activeConfigIDs.count
         return VStack(alignment: .leading, spacing: VFTheme.Spacing.xs) {
-            Label("\(configs.count) Surface(s), \(openCount) open", systemImage: "rectangle.on.rectangle.angled")
-                .font(VFTheme.Typography.body)
+            HStack(spacing: VFTheme.Spacing.xs) {
+                Label("\(total) Virtual Screen(s)", systemImage: "plus.display")
+                    .font(VFTheme.Typography.body)
+                Spacer()
+                if active > 0 {
+                    HStack(spacing: VFTheme.Spacing.xxs) {
+                        Circle()
+                            .fill(VFTheme.Colors.success)
+                            .frame(width: 6, height: 6)
+                        Text("\(active) active")
+                            .font(VFTheme.Typography.caption)
+                            .foregroundStyle(VFTheme.Colors.success)
+                    }
+                }
+            }
+
+            ForEach(appState.virtualDisplayService.configs.prefix(3)) { config in
+                HStack(spacing: VFTheme.Spacing.xs) {
+                    Circle()
+                        .fill(appState.virtualDisplayService.isActive(config.id)
+                              ? VFTheme.Colors.success : VFTheme.Colors.textTertiary)
+                        .frame(width: 5, height: 5)
+                    Text(config.name)
+                        .font(VFTheme.Typography.caption)
+                        .foregroundStyle(VFTheme.Colors.textSecondary)
+                    Spacer()
+                    Text(config.resolutionLabel)
+                        .font(VFTheme.Typography.mono)
+                        .foregroundStyle(VFTheme.Colors.textTertiary)
+                }
+            }
         }
         .padding(VFTheme.Spacing.md)
     }

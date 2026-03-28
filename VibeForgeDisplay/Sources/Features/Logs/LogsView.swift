@@ -4,6 +4,7 @@ struct LogsView: View {
     let logService: LogService
     let screenService: ScreenService
     let surfaceService: SurfaceService
+    let virtualDisplayService: VirtualDisplayService
 
     @State private var selectedCategory: LogEntry.Category?
     @State private var searchText = ""
@@ -56,24 +57,27 @@ struct LogsView: View {
     }
 
     private var diagnosticsCards: some View {
-        HStack(spacing: VFTheme.Spacing.md) {
+        let activeVirtual = virtualDisplayService.activeConfigIDs.count
+        let totalVirtual = virtualDisplayService.configs.count
+
+        return HStack(spacing: VFTheme.Spacing.md) {
             diagnosticCard(
-                title: "Display Enumeration",
-                status: screenService.screens.isEmpty ? "No screens" : "\(screenService.screens.count) screen(s)",
+                title: "Physical Screens",
+                status: screenService.screens.isEmpty ? "No screens" : "\(screenService.screens.count) detected",
                 color: screenService.screens.isEmpty ? VFTheme.Colors.warning : VFTheme.Colors.success,
                 icon: "display"
+            )
+            diagnosticCard(
+                title: "Virtual Screens",
+                status: totalVirtual == 0 ? "None configured" : "\(activeVirtual)/\(totalVirtual) active",
+                color: activeVirtual > 0 ? VFTheme.Colors.success : (totalVirtual > 0 ? VFTheme.Colors.warning : VFTheme.Colors.textTertiary),
+                icon: "plus.display"
             )
             diagnosticCard(
                 title: "Surfaces",
                 status: "\(surfaceService.configs.count) configured, \(surfaceService.configs.filter(\.isOpen).count) open",
                 color: VFTheme.Colors.success,
                 icon: "rectangle.on.rectangle.angled"
-            )
-            diagnosticCard(
-                title: "Streaming",
-                status: "Not available (Slice 2)",
-                color: VFTheme.Colors.textTertiary,
-                icon: "wifi"
             )
             diagnosticCard(
                 title: "System",

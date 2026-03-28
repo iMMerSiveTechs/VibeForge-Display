@@ -54,6 +54,11 @@ struct MainWindowView: View {
                 screenService: appState.screenService,
                 logService: appState.logService
             )
+        case .virtualScreens:
+            VirtualDisplaysView(
+                virtualDisplayService: appState.virtualDisplayService,
+                logService: appState.logService
+            )
         case .modes:
             ModesView(
                 modeService: appState.modeService,
@@ -67,15 +72,33 @@ struct MainWindowView: View {
                 screenService: appState.screenService,
                 logService: appState.logService
             )
+        case .routes:
+            RoutesPlaceholderView()
         case .logs:
             LogsView(
                 logService: appState.logService,
                 screenService: appState.screenService,
-                surfaceService: appState.surfaceService
+                surfaceService: appState.surfaceService,
+                virtualDisplayService: appState.virtualDisplayService
             )
         case .settings:
             SettingsView(appState: appState)
         }
+    }
+}
+
+// MARK: - Routes Placeholder
+
+struct RoutesPlaceholderView: View {
+    var body: some View {
+        EmptyStateView(
+            icon: "point.3.connected.trianglepath.dotted",
+            title: "Routes Coming Soon",
+            message: "Stream your virtual screens or Surfaces to other TVs, displays, and devices. This feature is in development.",
+            actionLabel: nil,
+            action: {}
+        )
+        .background(VFTheme.Colors.background)
     }
 }
 
@@ -135,6 +158,7 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: VFTheme.Spacing.sm) {
                 infoRow("Saved Modes", "\(appState.modeService.modes.count)")
+                infoRow("Virtual Screens", "\(appState.virtualDisplayService.configs.count) (\(appState.virtualDisplayService.activeConfigIDs.count) active)")
                 infoRow("Surfaces", "\(appState.surfaceService.configs.count)")
                 infoRow("Log Entries", "\(appState.logService.entries.count)")
             }
@@ -146,13 +170,14 @@ struct SettingsView: View {
 
     private var limitsSection: some View {
         VStack(alignment: .leading, spacing: VFTheme.Spacing.md) {
-            SectionHeader(title: "Honest Limits", icon: "exclamationmark.triangle")
+            SectionHeader(title: "How It Works", icon: "info.circle")
 
             VStack(alignment: .leading, spacing: VFTheme.Spacing.sm) {
-                limitRow("Surfaces are app-managed workspaces, not real hardware displays")
-                limitRow("Display configuration uses public macOS APIs only")
-                limitRow("No hardware bypass, fake clamshell, or driver-level overrides")
-                limitRow("Streaming and routing are planned for a future update")
+                limitRow("Virtual screens use macOS display APIs to create additional monitors")
+                limitRow("They appear in System Settings > Displays as real screens")
+                limitRow("Use AirPlay or display arrangement to show content on your TVs")
+                limitRow("Surfaces are app-managed utility workspaces with widgets")
+                limitRow("Routes (streaming to other devices) coming in a future update")
             }
             .padding(VFTheme.Spacing.md)
             .background(VFTheme.Colors.surface)

@@ -52,27 +52,7 @@ struct SidebarNavigation: View {
                     .font(VFTheme.Typography.body)
                     .foregroundStyle(isSelected ? VFTheme.Colors.textPrimary : VFTheme.Colors.textSecondary)
                 Spacer()
-                if tab == .screens {
-                    Text("\(appState.screenService.screens.count)")
-                        .font(VFTheme.Typography.caption)
-                        .foregroundStyle(VFTheme.Colors.textTertiary)
-                        .padding(.horizontal, VFTheme.Spacing.xs)
-                        .padding(.vertical, 2)
-                        .background(VFTheme.Colors.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: VFTheme.Radius.sm))
-                }
-                if tab == .surfaces {
-                    let openCount = appState.surfaceService.configs.filter(\.isOpen).count
-                    if openCount > 0 {
-                        Text("\(openCount)")
-                            .font(VFTheme.Typography.caption)
-                            .foregroundStyle(VFTheme.Colors.success)
-                            .padding(.horizontal, VFTheme.Spacing.xs)
-                            .padding(.vertical, 2)
-                            .background(VFTheme.Colors.surface)
-                            .clipShape(RoundedRectangle(cornerRadius: VFTheme.Radius.sm))
-                    }
-                }
+                badgeView(for: tab)
             }
             .padding(.horizontal, VFTheme.Spacing.sm)
             .padding(.vertical, VFTheme.Spacing.sm)
@@ -80,6 +60,43 @@ struct SidebarNavigation: View {
             .clipShape(RoundedRectangle(cornerRadius: VFTheme.Radius.sm))
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func badgeView(for tab: AppState.SidebarTab) -> some View {
+        switch tab {
+        case .screens:
+            countBadge(appState.screenService.screens.count, color: VFTheme.Colors.textTertiary)
+        case .virtualScreens:
+            let active = appState.virtualDisplayService.activeConfigIDs.count
+            if active > 0 {
+                countBadge(active, color: VFTheme.Colors.success)
+            } else {
+                let total = appState.virtualDisplayService.configs.count
+                if total > 0 {
+                    countBadge(total, color: VFTheme.Colors.textTertiary)
+                }
+            }
+        case .surfaces:
+            let openCount = appState.surfaceService.configs.filter(\.isOpen).count
+            if openCount > 0 {
+                countBadge(openCount, color: VFTheme.Colors.success)
+            }
+        case .routes:
+            StatusBadge(label: "Soon", color: VFTheme.Colors.textTertiary)
+        default:
+            EmptyView()
+        }
+    }
+
+    private func countBadge(_ count: Int, color: Color) -> some View {
+        Text("\(count)")
+            .font(VFTheme.Typography.caption)
+            .foregroundStyle(color)
+            .padding(.horizontal, VFTheme.Spacing.xs)
+            .padding(.vertical, 2)
+            .background(VFTheme.Colors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: VFTheme.Radius.sm))
     }
 
     private var footerInfo: some View {
