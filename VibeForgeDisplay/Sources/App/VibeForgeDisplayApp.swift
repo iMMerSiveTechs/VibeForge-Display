@@ -85,7 +85,9 @@ struct MainWindowView: View {
                 logService: appState.logService,
                 screenService: appState.screenService,
                 surfaceService: appState.surfaceService,
-                virtualDisplayService: appState.virtualDisplayService
+                virtualDisplayService: appState.virtualDisplayService,
+                streamService: appState.streamService,
+                hlsServer: appState.hlsServer
             )
         case .settings:
             SettingsView(appState: appState)

@@ -5,6 +5,8 @@ struct LogsView: View {
     let screenService: ScreenService
     let surfaceService: SurfaceService
     let virtualDisplayService: VirtualDisplayService
+    let streamService: StreamService
+    let hlsServer: HLSServer
 
     @State private var selectedCategory: LogEntry.Category?
     @State private var searchText = ""
@@ -79,14 +81,27 @@ struct LogsView: View {
                 color: VFTheme.Colors.success,
                 icon: "rectangle.on.rectangle.angled"
             )
-            diagnosticCard(
-                title: "System",
-                status: "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)",
-                color: VFTheme.Colors.success,
-                icon: "desktopcomputer"
-            )
+            streamingCard
         }
         .padding(VFTheme.Spacing.xl)
+    }
+
+    private var streamingCard: some View {
+        let live = streamService.streamingRouteIDs.count
+        let running = hlsServer.isRunning
+        let status: String
+        let color: Color
+        if live > 0 {
+            status = "\(live) live · server on"
+            color = VFTheme.Colors.success
+        } else if running {
+            status = "Server on · idle"
+            color = VFTheme.Colors.textSecondary
+        } else {
+            status = "Server off"
+            color = VFTheme.Colors.textTertiary
+        }
+        return diagnosticCard(title: "Streaming", status: status, color: color, icon: "dot.radiowaves.left.and.right")
     }
 
     private func diagnosticCard(title: String, status: String, color: Color, icon: String) -> some View {
