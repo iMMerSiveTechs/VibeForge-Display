@@ -76,6 +76,7 @@ struct MainWindowView: View {
             RoutesView(
                 streamService: appState.streamService,
                 virtualDisplayService: appState.virtualDisplayService,
+                surfaceService: appState.surfaceService,
                 hlsServer: appState.hlsServer,
                 logService: appState.logService
             )

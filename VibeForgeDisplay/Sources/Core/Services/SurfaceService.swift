@@ -85,6 +85,15 @@ final class SurfaceService {
         persistConfigs()
     }
 
+    /// Ensures the surface window is open and returns its CGWindowID for capture.
+    func ensureWindowID(for id: UUID) -> CGWindowID? {
+        if windows[id] == nil || windows[id]?.isVisible == false {
+            openSurfaceWindow(id)
+        }
+        guard let number = windows[id]?.windowNumber else { return nil }
+        return CGWindowID(number)
+    }
+
     // MARK: - Widget Data
 
     func notePadData(for surfaceID: UUID, widgetID: UUID) -> NotePadData {

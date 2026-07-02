@@ -1,12 +1,26 @@
 import Foundation
 
-/// A Route maps a source (a virtual screen) to a live LL-HLS stream that
-/// receivers (Apple TV app or a browser) can play over the local network.
+/// What a Route captures and streams.
+/// - `virtualScreen`: an extended desktop created via CGVirtualDisplay (private API).
+///   True "extra screen" behavior, but depends on ScreenCaptureKit being able to
+///   capture a headless virtual display.
+/// - `surface`: a VibeForge Surface window (public API, always capturable, and
+///   App-Store-safe). The reliable fallback / alternative source.
+enum RouteSourceKind: String, Codable, Sendable, CaseIterable, Identifiable {
+    case virtualScreen = "Virtual Screen"
+    case surface = "Surface"
+    var id: String { rawValue }
+    var icon: String { self == .virtualScreen ? "display" : "rectangle.on.rectangle.angled" }
+}
+
+/// A Route maps a source to a live LL-HLS stream that receivers (Apple TV app or
+/// a browser) can play over the local network.
 struct RouteConfig: Identifiable, Codable, Sendable {
     let id: UUID
     var name: String
-    /// The VirtualScreenConfig.id this route captures and streams.
-    var sourceVirtualScreenID: UUID
+    var sourceKind: RouteSourceKind
+    /// Id of the source: a VirtualScreenConfig.id or a SurfaceConfig.id per `sourceKind`.
+    var sourceID: UUID
     var quality: StreamQuality
     /// Stable, URL-safe key used in stream paths (e.g. /s/<streamKey>/media.m3u8).
     var streamKey: String
@@ -15,13 +29,15 @@ struct RouteConfig: Identifiable, Codable, Sendable {
 
     init(
         name: String,
-        sourceVirtualScreenID: UUID,
+        sourceKind: RouteSourceKind = .virtualScreen,
+        sourceID: UUID,
         quality: StreamQuality = .balanced,
         autoStart: Bool = false
     ) {
         self.id = UUID()
         self.name = name
-        self.sourceVirtualScreenID = sourceVirtualScreenID
+        self.sourceKind = sourceKind
+        self.sourceID = sourceID
         self.quality = quality
         self.streamKey = RouteConfig.makeStreamKey()
         self.autoStart = autoStart

@@ -4,10 +4,15 @@ import AppKit
 struct RoutesView: View {
     let streamService: StreamService
     let virtualDisplayService: VirtualDisplayService
+    let surfaceService: SurfaceService
     let hlsServer: HLSServer
     let logService: LogService
 
     @State private var showCreateSheet = false
+
+    private var hasAnySource: Bool {
+        !virtualDisplayService.configs.isEmpty || !surfaceService.configs.isEmpty
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -22,7 +27,8 @@ struct RoutesView: View {
         .sheet(isPresented: $showCreateSheet) {
             CreateRouteSheet(
                 streamService: streamService,
-                virtualDisplayService: virtualDisplayService
+                virtualDisplayService: virtualDisplayService,
+                surfaceService: surfaceService
             )
         }
     }
@@ -44,7 +50,7 @@ struct RoutesView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(VFTheme.Colors.accent)
-            .disabled(virtualDisplayService.configs.isEmpty)
+            .disabled(!hasAnySource)
         }
         .padding(VFTheme.Spacing.xl)
     }
@@ -71,11 +77,11 @@ struct RoutesView: View {
 
     @ViewBuilder
     private var content: some View {
-        if virtualDisplayService.configs.isEmpty {
+        if !hasAnySource {
             EmptyStateView(
                 icon: "point.3.connected.trianglepath.dotted",
-                title: "Create a Virtual Screen First",
-                message: "Routes stream a virtual screen to a TV. Add a Virtual Screen, then come back here to route it.",
+                title: "Create a Source First",
+                message: "Routes stream a Virtual Screen or a Surface to a TV. Add one of those, then come back here to route it.",
                 actionLabel: nil,
                 action: {}
             )
@@ -127,7 +133,12 @@ struct RoutesView: View {
     }
 
     private func sourceName(for route: RouteConfig) -> String {
-        virtualDisplayService.configs.first(where: { $0.id == route.sourceVirtualScreenID })?.name ?? "Missing source"
+        switch route.sourceKind {
+        case .virtualScreen:
+            return virtualDisplayService.configs.first(where: { $0.id == route.sourceID })?.name ?? "Missing screen"
+        case .surface:
+            return surfaceService.configs.first(where: { $0.id == route.sourceID })?.name ?? "Missing surface"
+        }
     }
 
     private func toggle(_ route: RouteConfig) {
@@ -283,11 +294,26 @@ struct RouteRow: View {
 struct CreateRouteSheet: View {
     let streamService: StreamService
     let virtualDisplayService: VirtualDisplayService
+    let surfaceService: SurfaceService
 
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
+    @State private var sourceKind: RouteSourceKind = .virtualScreen
     @State private var selectedSourceID: UUID?
     @State private var quality: StreamQuality = .balanced
+
+    private var hasVirtual: Bool { !virtualDisplayService.configs.isEmpty }
+    private var hasSurface: Bool { !surfaceService.configs.isEmpty }
+
+    /// The selectable sources for the currently chosen kind.
+    private var sources: [(id: UUID, label: String)] {
+        switch sourceKind {
+        case .virtualScreen:
+            return virtualDisplayService.configs.map { ($0.id, "\($0.name) · \($0.resolutionLabel)") }
+        case .surface:
+            return surfaceService.configs.map { ($0.id, "\($0.name) · \($0.preset.rawValue)") }
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: VFTheme.Spacing.xl) {
@@ -303,14 +329,34 @@ struct CreateRouteSheet: View {
                     .textFieldStyle(.roundedBorder)
             }
 
+            if hasVirtual && hasSurface {
+                VStack(alignment: .leading, spacing: VFTheme.Spacing.sm) {
+                    Text("Source Type")
+                        .font(VFTheme.Typography.headline)
+                        .foregroundStyle(VFTheme.Colors.textSecondary)
+                    Picker("", selection: $sourceKind) {
+                        Text("Virtual Screen").tag(RouteSourceKind.virtualScreen)
+                        Text("Surface").tag(RouteSourceKind.surface)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .onChange(of: sourceKind) { _, _ in selectedSourceID = sources.first?.id }
+                    Text(sourceKind == .virtualScreen
+                         ? "A full extra desktop. True “extra screen”, but relies on capturing a headless virtual display."
+                         : "A VibeForge Surface window. Always capturable and App-Store-safe — the reliable option.")
+                        .font(VFTheme.Typography.caption)
+                        .foregroundStyle(VFTheme.Colors.textTertiary)
+                }
+            }
+
             VStack(alignment: .leading, spacing: VFTheme.Spacing.sm) {
-                Text("Source Virtual Screen")
+                Text("Source")
                     .font(VFTheme.Typography.headline)
                     .foregroundStyle(VFTheme.Colors.textSecondary)
                 Picker("", selection: $selectedSourceID) {
                     Text("Select…").tag(nil as UUID?)
-                    ForEach(virtualDisplayService.configs) { config in
-                        Text("\(config.name) · \(config.resolutionLabel)").tag(config.id as UUID?)
+                    ForEach(sources, id: \.id) { src in
+                        Text(src.label).tag(src.id as UUID?)
                     }
                 }
                 .labelsHidden()
@@ -345,14 +391,16 @@ struct CreateRouteSheet: View {
         .frame(width: 460)
         .background(VFTheme.Colors.background)
         .onAppear {
-            if selectedSourceID == nil { selectedSourceID = virtualDisplayService.configs.first?.id }
+            // Default to whichever source kind actually has options.
+            sourceKind = hasVirtual ? .virtualScreen : .surface
+            selectedSourceID = sources.first?.id
         }
     }
 
     private func create() {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, let sourceID = selectedSourceID else { return }
-        let route = RouteConfig(name: trimmed, sourceVirtualScreenID: sourceID, quality: quality)
+        let route = RouteConfig(name: trimmed, sourceKind: sourceKind, sourceID: sourceID, quality: quality)
         streamService.addRoute(route)
         dismiss()
     }

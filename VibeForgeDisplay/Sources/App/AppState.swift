@@ -50,7 +50,8 @@ final class AppState {
             persistence: persistence,
             logService: logService,
             hlsServer: hlsServer,
-            virtualDisplayService: virtualDisplayService
+            virtualDisplayService: virtualDisplayService,
+            surfaceService: surfaceService
         )
 
         self.persistence = persistence

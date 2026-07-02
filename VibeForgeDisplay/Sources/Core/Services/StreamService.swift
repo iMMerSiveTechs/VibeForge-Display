@@ -6,11 +6,18 @@ import CoreGraphics
 import ScreenCaptureKit
 import UniformTypeIdentifiers
 
+/// What ScreenCaptureKit will capture for a running session.
+enum StreamSource: Sendable {
+    case display(CGDirectDisplayID)   // a (virtual) display
+    case window(CGWindowID)           // a Surface window
+}
+
 // MARK: - StreamService
 
-/// Owns live Routes. For each running route it captures a virtual display with
-/// ScreenCaptureKit, encodes to H.264 via AVAssetWriter's HLS segmentation, and
-/// feeds segments to the HLSServer so receivers can play them over the LAN.
+/// Owns live Routes. For each running route it captures its source (a virtual
+/// display or a Surface window) with ScreenCaptureKit, encodes to H.264 via
+/// AVAssetWriter's HLS segmentation, and feeds segments to the HLSServer so
+/// receivers can play them over the LAN.
 @MainActor
 @Observable
 final class StreamService {
@@ -22,17 +29,20 @@ final class StreamService {
     private let logService: LogService
     private let hlsServer: HLSServer
     private let virtualDisplayService: VirtualDisplayService
+    private let surfaceService: SurfaceService
 
     init(
         persistence: PersistenceManager,
         logService: LogService,
         hlsServer: HLSServer,
-        virtualDisplayService: VirtualDisplayService
+        virtualDisplayService: VirtualDisplayService,
+        surfaceService: SurfaceService
     ) {
         self.persistence = persistence
         self.logService = logService
         self.hlsServer = hlsServer
         self.virtualDisplayService = virtualDisplayService
+        self.surfaceService = surfaceService
         loadRoutes()
     }
 
@@ -83,18 +93,40 @@ final class StreamService {
         guard let route = routes.first(where: { $0.id == id }) else { return }
         guard !streamingRouteIDs.contains(id) else { return }
 
-        guard let vs = virtualDisplayService.configs.first(where: { $0.id == route.sourceVirtualScreenID }) else {
-            logService.log(.error, "Route source missing", detail: "No virtual screen for \(route.name)")
-            return
-        }
+        // Resolve the capture source and its dimensions per source kind.
+        let source: StreamSource
+        let width: Int
+        let height: Int
 
-        // Ensure the source virtual display is live so it has a CGDirectDisplayID to capture.
-        if !virtualDisplayService.isActive(vs.id) {
-            await virtualDisplayService.createDisplay(config: vs)
-        }
-        guard let displayID = virtualDisplayService.displayID(for: vs.id) else {
-            logService.log(.error, "Could not activate source display", detail: route.name)
-            return
+        switch route.sourceKind {
+        case .virtualScreen:
+            guard let vs = virtualDisplayService.configs.first(where: { $0.id == route.sourceID }) else {
+                logService.log(.error, "Route source missing", detail: "No virtual screen for \(route.name)")
+                return
+            }
+            if !virtualDisplayService.isActive(vs.id) {
+                await virtualDisplayService.createDisplay(config: vs)
+            }
+            guard let displayID = virtualDisplayService.displayID(for: vs.id) else {
+                logService.log(.error, "Could not activate source display", detail: route.name)
+                return
+            }
+            source = .display(displayID)
+            width = vs.width
+            height = vs.height
+
+        case .surface:
+            guard let sc = surfaceService.configs.first(where: { $0.id == route.sourceID }) else {
+                logService.log(.error, "Route source missing", detail: "No surface for \(route.name)")
+                return
+            }
+            guard let windowID = surfaceService.ensureWindowID(for: sc.id) else {
+                logService.log(.error, "Could not open source surface window", detail: route.name)
+                return
+            }
+            source = .window(windowID)
+            width = max(2, Int(sc.frameWidth))
+            height = max(2, Int(sc.frameHeight))
         }
 
         hlsServer.start()
@@ -102,9 +134,9 @@ final class StreamService {
 
         let session = StreamSession(
             route: route,
-            displayID: displayID,
-            sourceWidth: vs.width,
-            sourceHeight: vs.height,
+            source: source,
+            sourceWidth: width,
+            sourceHeight: height,
             store: hlsServer.store,
             logService: logService
         )
@@ -160,7 +192,7 @@ final class StreamService {
 /// (lock-protected) HLSSegmentStore and its own serial state from those queues.
 final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWriterDelegate, @unchecked Sendable {
     private let route: RouteConfig
-    private let displayID: CGDirectDisplayID
+    private let source: StreamSource
     private let sourceWidth: Int
     private let sourceHeight: Int
     private let store: HLSSegmentStore
@@ -181,10 +213,10 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
     func framesEncoded() -> Int { statsLock.lock(); defer { statsLock.unlock() }; return _framesEncoded }
     func segmentsOut() -> Int { statsLock.lock(); defer { statsLock.unlock() }; return _segmentsOut }
 
-    init(route: RouteConfig, displayID: CGDirectDisplayID, sourceWidth: Int, sourceHeight: Int,
+    init(route: RouteConfig, source: StreamSource, sourceWidth: Int, sourceHeight: Int,
          store: HLSSegmentStore, logService: LogService) {
         self.route = route
-        self.displayID = displayID
+        self.source = source
         self.sourceWidth = sourceWidth
         self.sourceHeight = sourceHeight
         self.store = store
@@ -198,14 +230,25 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
 
     func start() async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-        guard let scDisplay = content.displays.first(where: { $0.displayID == displayID }) else {
-            throw NSError(domain: "VibeForge", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Display \(displayID) not capturable"])
+
+        let filter: SCContentFilter
+        switch source {
+        case .display(let displayID):
+            guard let scDisplay = content.displays.first(where: { $0.displayID == displayID }) else {
+                throw NSError(domain: "VibeForge", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "Display \(displayID) not capturable"])
+            }
+            filter = SCContentFilter(display: scDisplay, excludingWindows: [])
+        case .window(let windowID):
+            guard let scWindow = content.windows.first(where: { $0.windowID == windowID }) else {
+                throw NSError(domain: "VibeForge", code: 4,
+                              userInfo: [NSLocalizedDescriptionKey: "Window \(windowID) not capturable"])
+            }
+            filter = SCContentFilter(desktopIndependentWindow: scWindow)
         }
 
         try setupWriter()
 
-        let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
         let config = SCStreamConfiguration()
         config.width = outWidth
         config.height = outHeight
