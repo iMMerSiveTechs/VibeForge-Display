@@ -241,19 +241,24 @@ Limitation: transport is plain HTTP on the LAN (required for `.local`/AVPlayer).
 - [x] Resolution presets (720p to 4K)
 - [x] Auto-create on launch (with black-screen crash guard)
 
-### Slice 2 (In progress)
+### Slice 2 (Done)
 - [x] Local streaming of virtual screens (LL-HLS over LAN)
 - [x] Browser (web) receiver — any device with a browser
 - [x] Apple TV (tvOS) receiver app with Bonjour discovery
 - [x] Quality presets (Low / Balanced / High)
-- [ ] Per-route live stats (fps / bitrate / dropped frames)
-- [ ] Wall Presets (snapshot routes as one-click layouts)
+- [x] Per-route live stats (fps / frames / uptime)
+- [x] Window / Surface as a stream source (App-Store-safe, no private API)
+- [x] Wall Presets — snapshot a whole multi-TV layout, restore in one tap
+- [x] Auto-start routes on launch (safe-mode aware)
+- [x] Security: per-session token gating, PIN pairing, DNS-rebind defense
+- [x] App icon + first-run onboarding
 
 ### Slice 3 (Future)
-- [ ] Window / Surface as a stream source (App-Store-safe, no private API)
 - [ ] WebRTC transport for sub-second latency
 - [ ] Audio streaming
-- [ ] Automation / hotkeys
+- [ ] Self-hosted hls.js (drop CDN) + SRI
+- [ ] Global hotkeys / Shortcuts automation
+- [ ] Signed + notarized direct-download build
 
 ---
 
