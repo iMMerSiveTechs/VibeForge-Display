@@ -34,14 +34,14 @@ struct ModesView: View {
                 surfaceService: surfaceService
             )
         }
-        .alert("Mode Restored", isPresented: $showRestoreAlert) {
+        .alert("Mode Compatibility", isPresented: $showRestoreAlert) {
             Button("OK") { restoreResult = nil }
         } message: {
             if let result = restoreResult {
                 let restoredText = result.restoredItems.joined(separator: "\n")
                 let manualText = result.manualItems.isEmpty
                     ? ""
-                    : "\n\nManual action needed:\n" + result.manualItems.joined(separator: "\n")
+                    : "\n\nNot currently available:\n" + result.manualItems.joined(separator: "\n")
                 Text(restoredText + manualText)
             }
         }
@@ -53,7 +53,7 @@ struct ModesView: View {
                 Text("Modes")
                     .font(VFTheme.Typography.largeTitle)
                     .foregroundStyle(VFTheme.Colors.textPrimary)
-                Text("Save and restore your screen setup presets")
+                Text("Save a snapshot of your display setup and check it against what's connected. For live multi-TV layouts, use Wall Presets in Routes.")
                     .font(VFTheme.Typography.caption)
                     .foregroundStyle(VFTheme.Colors.textSecondary)
             }

@@ -82,7 +82,7 @@ final class ModeService {
         }
 
         let surfaceCount = mode.surfacePreferences.count
-        restored.append("\(surfaceCount) surface preference(s) loaded")
+        restored.append("\(surfaceCount) surface preference(s) recorded in this snapshot")
 
         logService.log(.mode, "Restored mode: \(mode.name)",
                        detail: "Restored: \(restored.count), Manual: \(manual.count)")

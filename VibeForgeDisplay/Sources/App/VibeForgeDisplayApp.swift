@@ -176,7 +176,7 @@ struct SettingsView: View {
                 limitRow("They appear in System Settings > Displays as real screens")
                 limitRow("Wired TVs use HDMI/display arrangement; wireless TVs use Routes (VibeForge's own stream, not Apple AirPlay)")
                 limitRow("Surfaces are app-managed utility workspaces with widgets")
-                limitRow("Routes (streaming to other devices) coming in a future update")
+                limitRow("Routes stream over VibeForge's own transport, not Apple AirPlay")
             }
             .padding(VFTheme.Spacing.md)
             .background(VFTheme.Colors.surface)

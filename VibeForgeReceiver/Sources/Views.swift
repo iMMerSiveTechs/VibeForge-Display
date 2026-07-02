@@ -28,8 +28,12 @@ struct StreamListView: View {
     private var discoveredSection: some View {
         Section("On your network") {
             if discovery.servers.isEmpty {
-                Label("Searching for a VibeForge Mac…", systemImage: "magnifyingglass")
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Searching for a VibeForge Mac…", systemImage: "magnifyingglass")
+                    Text("On the Mac, open Routes and press “Pair Apple TV” (or start a route) — it appears here once its stream server is running.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 ForEach(discovery.servers) { server in
                     NavigationLink(value: server) {
@@ -96,9 +100,10 @@ struct ServerStreamsView: View {
                 .foregroundStyle(.secondary)
             TextField("123456", text: $pin)
                 .textContentType(.oneTimeCode)
+                .keyboardType(.numberPad)
                 .frame(maxWidth: 400)
             if pairError {
-                Label("Wrong or expired code — get a fresh one on the Mac.", systemImage: "exclamationmark.triangle")
+                Label("Wrong or expired code, or couldn't reach the Mac. Check Wi-Fi, then get a fresh code on the Mac.", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)
             }
             Button {
@@ -166,22 +171,43 @@ struct ServerStreamsView: View {
     }
 }
 
-/// Full-screen HLS playback.
+/// Full-screen HLS playback with an exit path when the stream ends or fails
+/// (Mac stopped the route, restarted and rotated its token, or Wi-Fi dropped) —
+/// otherwise the user is stuck on a frozen frame with no way back.
 struct PlayerView: View {
     let url: URL
+    @Environment(\.dismiss) private var dismiss
     @State private var player = AVPlayer()
+    @State private var failed = false
+    @State private var ticker = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        VideoPlayer(player: player)
-            .ignoresSafeArea()
-            .onAppear {
-                let item = AVPlayerItem(url: url)
-                player.replaceCurrentItem(with: item)
-                player.play()
+        ZStack {
+            VideoPlayer(player: player)
+                .ignoresSafeArea()
+            if failed {
+                VStack(spacing: 20) {
+                    Image(systemName: "wifi.exclamationmark").font(.system(size: 60))
+                    Text("Stream ended or unavailable").font(.title2)
+                    Text("The Mac may have stopped this route or restarted. Go back and reconnect.")
+                        .foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Button("Back") { dismiss() }
+                }
+                .padding(60)
+                .background(.black.opacity(0.85))
             }
-            .onDisappear {
-                player.pause()
-                player.replaceCurrentItem(with: nil)
-            }
+        }
+        .onAppear {
+            let item = AVPlayerItem(url: url)
+            player.replaceCurrentItem(with: item)
+            player.play()
+        }
+        .onDisappear {
+            player.pause()
+            player.replaceCurrentItem(with: nil)
+        }
+        .onReceive(ticker) { _ in
+            if player.currentItem?.status == .failed { failed = true }
+        }
     }
 }

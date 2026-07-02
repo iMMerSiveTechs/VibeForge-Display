@@ -7,6 +7,7 @@ struct SurfacesView: View {
 
     @State private var showCreateSheet = false
     @State private var selectedSurfaceID: UUID?
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -116,6 +117,10 @@ struct SurfacesView: View {
                         surfaceService: surfaceService,
                         screenService: screenService
                     )
+                    // Rebuild (and reload @State from the new config) when the
+                    // selected surface changes — otherwise edits write to the
+                    // previously-selected surface.
+                    .id(id)
 
                     HStack {
                         Button("Open Surface") {
@@ -126,12 +131,17 @@ struct SurfacesView: View {
 
                         Spacer()
 
-                        Button("Delete Surface") {
-                            surfaceService.deleteSurface(id)
-                            selectedSurfaceID = nil
-                        }
+                        Button("Delete Surface") { showDeleteConfirm = true }
                         .buttonStyle(.bordered)
                         .foregroundStyle(VFTheme.Colors.error)
+                        .confirmationDialog("Delete this Surface? Its notes, checklists, and other widget data will be lost.",
+                                            isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+                            Button("Delete Surface", role: .destructive) {
+                                surfaceService.deleteSurface(id)
+                                selectedSurfaceID = nil
+                            }
+                            Button("Cancel", role: .cancel) { }
+                        }
                     }
                 }
                 .padding(VFTheme.Spacing.xl)

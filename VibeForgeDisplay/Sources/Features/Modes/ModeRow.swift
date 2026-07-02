@@ -45,7 +45,7 @@ struct ModeRow: View {
 
             if isHovering {
                 HStack(spacing: VFTheme.Spacing.sm) {
-                    Button("Restore", action: onRestore)
+                    Button("Check", action: onRestore)
                         .buttonStyle(.borderedProminent)
                         .tint(VFTheme.Colors.accent)
                         .controlSize(.small)

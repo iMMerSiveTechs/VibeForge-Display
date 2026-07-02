@@ -65,13 +65,14 @@ enum ConstantTime {
 /// (web) or by redeeming a short PIN the user opens on the Mac (Apple TV).
 /// Thread-safe: touched from both the UI (main) and the HTTP queue.
 final class SessionSecurity: @unchecked Sendable {
-    struct PairingState: Sendable { let active: Bool; let pin: String?; let secondsLeft: Int }
+    struct PairingState: Sendable { let active: Bool; let pin: String?; let secondsLeft: Int; let paired: Bool }
 
     private let lock = NSLock()
     private let token: String
     private var pin: String?
     private var pinExpiry: Date?
     private var attemptsLeft = 0
+    private var paired = false
 
     init() {
         token = SecureRandom.token(byteCount: 26)   // ~134 bits
@@ -97,6 +98,7 @@ final class SessionSecurity: @unchecked Sendable {
         pin = p
         pinExpiry = Date().addingTimeInterval(VFConstants.Security.pairingWindow)
         attemptsLeft = VFConstants.Security.maxPairingAttempts
+        paired = false
         return p
     }
 
@@ -116,7 +118,7 @@ final class SessionSecurity: @unchecked Sendable {
             return nil
         }
         if ConstantTime.equals(candidate, current) {
-            pin = nil; pinExpiry = nil; attemptsLeft = 0
+            pin = nil; pinExpiry = nil; attemptsLeft = 0; paired = true
             return token
         }
         attemptsLeft -= 1
@@ -128,6 +130,6 @@ final class SessionSecurity: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         if let exp = pinExpiry, Date() >= exp { pin = nil; pinExpiry = nil }
         let secs = pinExpiry.map { max(0, Int($0.timeIntervalSinceNow)) } ?? 0
-        return PairingState(active: pin != nil, pin: pin, secondsLeft: secs)
+        return PairingState(active: pin != nil, pin: pin, secondsLeft: secs, paired: paired)
     }
 }

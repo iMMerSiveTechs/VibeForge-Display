@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MenuBarView: View {
     let appState: AppState
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -133,9 +134,10 @@ struct MenuBarView: View {
     }
 
     private func openMainWindow() {
+        // openWindow(id:) re-creates the "main" Window scene even after the user
+        // closed it — a title-based NSWindow lookup fails once SwiftUI disposes
+        // it, which for an LSUIElement app leaves it unreachable.
+        openWindow(id: "main")
         NSApplication.shared.activate(ignoringOtherApps: true)
-        if let window = NSApplication.shared.windows.first(where: { $0.title == "VibeForge Display" }) {
-            window.makeKeyAndOrderFront(nil)
-        }
     }
 }
