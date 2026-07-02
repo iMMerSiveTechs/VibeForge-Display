@@ -186,7 +186,32 @@ VibeForge Display uses macOS's `CGVirtualDisplay` API to create virtual monitors
 - Virtual screens are created via macOS display APIs, not hardware drivers
 - Whether they bypass M1's 1-display limit depends on your specific macOS version
 - This is NOT a hardware hack — it works within macOS capabilities
-- Streaming to devices (Routes) is planned for a future update
+- **Routes streams over VibeForge's own transport (LL-HLS), not Apple AirPlay.** AirPlay's sender protocol is closed and single-target; no third-party app can emit AirPlay to multiple TVs. Routes achieves the same result (wireless, different content per TV) a different way.
+
+---
+
+## Routes — streaming a screen to a TV
+
+The **Routes** tab streams a virtual screen over your local network so any TV can show it:
+
+1. Create a **Virtual Screen** (Virtual Screens tab).
+2. In **Routes**, add a route pointing at that virtual screen, pick a quality, and press **Start**.
+3. On the TV/phone, either open the shown link in a browser or scan the QR code.
+
+Two kinds of receiver:
+- **Any browser device** (phones, laptops, smart TVs, Fire/Google TV sticks): just open the link — nothing to install.
+- **Apple TV** (no browser): install the **VibeForge Receiver** tvOS app (below). It auto-finds your Mac via Bonjour and plays the stream with AVPlayer.
+
+### Building the Apple TV receiver
+
+The tvOS receiver is a second target in the same project.
+
+1. Run `xcodegen generate` (it now creates both the Mac app and `VibeForge Receiver`).
+2. In Xcode, select the **VibeForge Receiver** scheme and your Apple TV as the run destination (pair the Apple TV via Xcode → Devices, or run in the tvOS Simulator first).
+3. Set your signing Team on the receiver target (needs an Apple Developer account for install on real Apple TV hardware).
+4. Run. On the Apple TV, pick your Mac, then the stream.
+
+> Requires the Mac and Apple TV on the same Wi-Fi/LAN. The receiver talks plain HTTP on the local network (allowed via `NSAllowsLocalNetworking`).
 
 ---
 
@@ -202,19 +227,21 @@ VibeForge Display uses macOS's `CGVirtualDisplay` API to create virtual monitors
 ### Slice 1.5 (Done)
 - [x] Virtual Screen creation via CGVirtualDisplay
 - [x] Resolution presets (720p to 4K)
-- [x] Auto-create on launch
-- [x] Updated navigation and diagnostics
+- [x] Auto-create on launch (with black-screen crash guard)
 
-### Slice 2 (Planned)
-- [ ] Local streaming of virtual screens / Surfaces
-- [ ] Receiver prototype (macOS)
-- [ ] Mode presets (Desk, TV, iPad, Dual TV)
-- [ ] Streaming stats and quality presets
+### Slice 2 (In progress)
+- [x] Local streaming of virtual screens (LL-HLS over LAN)
+- [x] Browser (web) receiver — any device with a browser
+- [x] Apple TV (tvOS) receiver app with Bonjour discovery
+- [x] Quality presets (Low / Balanced / High)
+- [ ] Per-route live stats (fps / bitrate / dropped frames)
+- [ ] Wall Presets (snapshot routes as one-click layouts)
 
 ### Slice 3 (Future)
-- [ ] iPad/tvOS receiver
-- [ ] Expanded Surface modules
-- [ ] Automation/hotkeys
+- [ ] Window / Surface as a stream source (App-Store-safe, no private API)
+- [ ] WebRTC transport for sub-second latency
+- [ ] Audio streaming
+- [ ] Automation / hotkeys
 
 ---
 

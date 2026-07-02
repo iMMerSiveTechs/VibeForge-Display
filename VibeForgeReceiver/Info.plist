@@ -11,26 +11,28 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>VibeForge Display</string>
+    <string>VibeForge Receiver</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
     <string>$(CURRENT_PROJECT_VERSION)</string>
-    <key>LSApplicationCategoryType</key>
-    <string>public.app-category.utilities</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
-    <key>LSUIElement</key>
+    <key>LSRequiresIPhoneOS</key>
     <true/>
-    <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2025 VibeForge. All rights reserved.</string>
+    <key>UILaunchScreen</key>
+    <dict/>
+    <!-- Local-network streaming over plain HTTP on the LAN -->
     <key>NSLocalNetworkUsageDescription</key>
-    <string>VibeForge Display streams your virtual screens to TVs and devices on your local network.</string>
+    <string>VibeForge Receiver finds your Mac on the local network to show its screen.</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_vibeforge._tcp</string>
     </array>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
 </dict>
 </plist>
