@@ -28,7 +28,9 @@ final class SurfaceWindow: NSPanel {
         window.title = config.name
         window.isMovableByWindowBackground = true
         window.hasShadow = true
-        window.backgroundColor = NSColor(red: 0.08, green: 0.08, blue: 0.10, alpha: config.opacity)
+        // Opacity is applied once, via the window's alphaValue. (Previously the
+        // background color alpha ALSO used opacity, so the result was opacity².)
+        window.backgroundColor = NSColor(red: 0.08, green: 0.08, blue: 0.10, alpha: 1.0)
         window.alphaValue = config.opacity
         window.minSize = NSSize(
             width: VFConstants.SurfaceDefaults.minWidth,

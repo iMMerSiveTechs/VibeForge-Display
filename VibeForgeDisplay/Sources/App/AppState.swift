@@ -74,5 +74,21 @@ final class AppState {
 
         logService.log(.system, "VibeForge Display launched", detail: "v\(VFConstants.appVersion)")
         streamService.scheduleAutoStart()
+        registerTerminationHook()
+    }
+
+    /// On a clean quit, stop streams and record the clean-exit marker so the next
+    /// launch may auto-create virtual screens (a quick quit otherwise looked like
+    /// an unclean exit and silently disabled auto-create).
+    private func registerTerminationHook() {
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.streamService.stopAll()
+                self?.hlsServer.stop()
+                self?.virtualDisplayService.markCleanExit()
+            }
+        }
     }
 }

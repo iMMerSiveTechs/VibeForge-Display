@@ -177,13 +177,17 @@ struct CreateVirtualDisplaySheet: View {
         return trimmed.isEmpty ? selectedPreset.rawValue : trimmed
     }
 
+    // Clamp custom dimensions to a sane range: below ~320 is unusable and huge
+    // values risk WindowServer rejection / UInt32 overflow downstream.
+    private func clampDimension(_ value: Int) -> Int { min(max(value, 320), 7680) }
+
     private var resolvedWidth: Int {
-        if useCustom, let w = Int(customWidth), w > 0 { return w }
+        if useCustom, let w = Int(customWidth), w > 0 { return clampDimension(w) }
         return selectedPreset.width
     }
 
     private var resolvedHeight: Int {
-        if useCustom, let h = Int(customHeight), h > 0 { return h }
+        if useCustom, let h = Int(customHeight), h > 0 { return clampDimension(h) }
         return selectedPreset.height
     }
 

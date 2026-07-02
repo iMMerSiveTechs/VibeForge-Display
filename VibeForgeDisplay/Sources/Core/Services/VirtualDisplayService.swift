@@ -54,6 +54,9 @@ final class VirtualDisplayService {
 
     @discardableResult
     func createDisplay(config: VirtualScreenConfig) async -> Bool {
+        // Re-entrancy: if it's already live, don't build a second one (which would
+        // drop the first and flash the display with a new ID).
+        guard !activeConfigIDs.contains(config.id) else { return true }
         // Build the CGVirtualDisplay descriptor
         let descriptor = CGVirtualDisplayDescriptor()
         descriptor.queue = DispatchQueue.global(qos: .userInitiated)
@@ -74,10 +77,15 @@ final class VirtualDisplayService {
         descriptor.greenPrimary = CGPoint(x: 0.2559, y: 0.6983)
         descriptor.bluePrimary = CGPoint(x: 0.1494, y: 0.0557)
 
-        // Non-zero vendor/product IDs required
+        // Stable, distinct vendor/product/serial derived from the config UUID.
+        // macOS keys display arrangement/resolution prefs on these, so they MUST
+        // be stable across launches (Swift's hashValue is per-process-random) and
+        // distinct per virtual screen (a shared productID/serial makes two screens
+        // indistinguishable to WindowServer).
+        let u = config.id.uuid
         descriptor.vendorID = 0xEEEE
-        descriptor.productID = 0x0001
-        descriptor.serialNum = UInt32(config.id.hashValue & 0xFFFF)
+        descriptor.productID = UInt32(u.4) << 8 | UInt32(u.5) | 0x0001
+        descriptor.serialNum = UInt32(u.0) << 24 | UInt32(u.1) << 16 | UInt32(u.2) << 8 | UInt32(u.3) | 0x1
 
         // Create the virtual display
         guard let virtualDisplay = CGVirtualDisplay(descriptor: descriptor) else {
@@ -227,16 +235,29 @@ final class VirtualDisplayService {
 
     // MARK: - Auto-Create on Launch
 
+    private var autoCreateTask: Task<Void, Never>?
+
     private func autoCreateDisplays() {
         let autoConfigs = configs.filter(\.autoCreateOnLaunch)
         guard !autoConfigs.isEmpty else { return }
-        Task { @MainActor in
-            // Small delay to let the app finish launching
-            try? await Task.sleep(nanoseconds: 800_000_000)
+        autoCreateTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 800_000_000)   // let launch settle
             for config in autoConfigs {
                 await createDisplay(config: config)
             }
         }
+    }
+
+    /// Awaits the launch auto-create pass so callers (auto-start routes) don't
+    /// race it with a fixed sleep. Returns immediately if there was no pass.
+    func awaitAutoCreate() async {
+        await autoCreateTask?.value
+    }
+
+    /// Records a clean exit so the next launch may auto-create (paired with the
+    /// crash guard). Call from the app-termination hook.
+    func markCleanExit() {
+        try? persistence.save(Date(), to: VFConstants.cleanExitMarkerFileName)
     }
 
     // MARK: - Timeout Helper

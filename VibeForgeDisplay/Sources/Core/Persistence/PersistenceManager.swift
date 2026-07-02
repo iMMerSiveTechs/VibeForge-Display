@@ -30,7 +30,20 @@ final class PersistenceManager {
         let data = try Data(contentsOf: url)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(T.self, from: data)
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            // Preserve an unreadable file before the caller (which falls back to an
+            // empty collection) can overwrite it on the next save and lose data.
+            backupCorruptFile(at: url)
+            throw error
+        }
+    }
+
+    private func backupCorruptFile(at url: URL) {
+        let stamp = Int(Date().timeIntervalSince1970)
+        let backup = url.appendingPathExtension("corrupt-\(stamp)")
+        try? FileManager.default.moveItem(at: url, to: backup)
     }
 
     func exists(_ fileName: String) -> Bool {

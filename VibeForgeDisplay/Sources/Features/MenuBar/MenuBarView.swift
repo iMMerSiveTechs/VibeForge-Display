@@ -17,6 +17,7 @@ struct MenuBarView: View {
             actionsSection
         }
         .frame(width: 300)
+        .preferredColorScheme(.dark)
     }
 
     private var headerSection: some View {

@@ -45,10 +45,15 @@ struct MainWindowView: View {
             detailView
         }
         .background(VFTheme.Colors.background)
-        .sheet(isPresented: Binding(get: { !onboarded }, set: { if $0 == false { onboarded = true } })) {
+        // Setter is a no-op: onboarding is completed only via onDone, so a
+        // programmatic dismissal (e.g. the window closing) can't mark it seen.
+        .sheet(isPresented: Binding(get: { !onboarded }, set: { _ in })) {
             OnboardingView(onDone: { onboarded = true })
                 .interactiveDismissDisabled(true)
         }
+        // The theme is hard-coded dark; pin the scheme so native controls
+        // (text fields, pickers, alerts) don't clash in system light mode.
+        .preferredColorScheme(.dark)
     }
 
     @ViewBuilder

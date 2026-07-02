@@ -240,7 +240,10 @@ final class StreamService {
         let autos = routes.filter(\.autoStart)
         guard !autos.isEmpty else { return }
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            // Wait for the virtual-display auto-create pass to finish rather than
+            // guessing with a fixed sleep — otherwise the isActive check below runs
+            // before slow displays come up and auto-start silently no-ops.
+            await virtualDisplayService.awaitAutoCreate()
             for route in autos {
                 switch route.sourceKind {
                 case .surface:
