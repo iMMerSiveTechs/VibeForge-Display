@@ -15,6 +15,6 @@ struct VibeForgeReceiverApp: App {
 /// The fixed HTTP/HLS port the Mac sender listens on (mirrors VFConstants.Streaming.httpPort).
 enum ReceiverConfig {
     static let port = 8760
-    static let bonjourType = "_vibeforge._tcp."
+    static let bonjourType = "_vibeforge._tcp"
     static let bonjourDomain = "local."
 }
