@@ -15,10 +15,20 @@ enum SecureRandom {
         return buf
     }
 
-    /// A URL-safe token with ~`bytes*8` bits of entropy (default 128 bits).
-    static func token(byteCount: Int = 16) -> String {
-        let alphabet = Array("abcdefghijklmnopqrstuvwxyz0123456789")
-        return bytes(byteCount).map { alphabet[Int($0) % alphabet.count] }.reduce("") { $0 + String($1) }
+    /// A URL-safe token of `length` chars from a 36-char alphabet, drawn without
+    /// modulo bias via rejection sampling (~5.17 bits/char).
+    static func token(byteCount length: Int = 16) -> String {
+        let alphabet = Array("abcdefghijklmnopqrstuvwxyz0123456789")  // 36
+        var out = ""
+        while out.count < length {
+            for b in bytes(length) {
+                if b < 252 {                       // 252 = 7*36, unbiased over 0..251
+                    out.append(alphabet[Int(b) % 36])
+                    if out.count == length { break }
+                }
+            }
+        }
+        return out
     }
 
     /// A numeric PIN of `digits` length, uniformly distributed (rejection sampling).
@@ -99,6 +109,9 @@ final class SessionSecurity: @unchecked Sendable {
     func redeem(pin candidate: String) -> String? {
         lock.lock(); defer { lock.unlock() }
         guard let current = pin, let exp = pinExpiry, attemptsLeft > 0, Date() < exp else {
+            // Constant-time dummy compare so timing doesn't reveal whether a
+            // pairing window is currently open.
+            _ = ConstantTime.equals(candidate, "000000")
             pin = nil; pinExpiry = nil
             return nil
         }

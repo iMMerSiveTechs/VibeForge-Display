@@ -70,8 +70,13 @@ final class HLSSegmentStore: @unchecked Sendable {
     /// Builds a live media playlist referencing the current window of segments.
     func mediaPlaylist(key: String) -> String? {
         lock.lock(); defer { lock.unlock() }
-        guard let s = streams[key], s.initData != nil else { return nil }
-        let target = Int(ceil(VFConstants.Streaming.segmentDuration)) + 1
+        // Serve only once we have the init segment AND at least one media segment —
+        // an init-only playlist makes players raise spurious "empty playlist" errors.
+        guard let s = streams[key], s.initData != nil, !s.segments.isEmpty else { return nil }
+        // TARGETDURATION must be >= the longest EXTINF (spec) — derive it, since a
+        // keep-alive gap can briefly produce a slightly longer segment.
+        let maxDur = s.segments.map(\.duration).max() ?? VFConstants.Streaming.segmentDuration
+        let target = max(1, Int(ceil(maxDur)))
         var lines = [
             "#EXTM3U",
             "#EXT-X-VERSION:7",
@@ -89,6 +94,23 @@ final class HLSSegmentStore: @unchecked Sendable {
 
 // MARK: - HLS / HTTP server
 
+/// Lock-guarded concurrent-connection counter, safe to touch from the
+/// `nonisolated` connection handlers (which can't reach main-actor state).
+final class ConnectionLimiter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    private let max: Int
+    init(max: Int) { self.max = max }
+    func tryAcquire() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if count >= max { return false }
+        count += 1; return true
+    }
+    func release() {
+        lock.lock(); if count > 0 { count -= 1 }; lock.unlock()
+    }
+}
+
 @MainActor
 @Observable
 final class HLSServer {
@@ -97,6 +119,7 @@ final class HLSServer {
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "vibeforge.hls.http")
     private let logService: LogService
+    private let limiter = ConnectionLimiter(max: VFConstants.Streaming.maxConnections)
 
     let security = SessionSecurity()
 
@@ -206,7 +229,20 @@ final class HLSServer {
     // Sendable `let`s (store, security, queue), so they are `nonisolated`.
 
     nonisolated private func handle(_ conn: NWConnection) {
+        // Cap concurrent connections (FD-exhaustion / slow-loris defense).
+        guard limiter.tryAcquire() else { conn.cancel(); return }
+        conn.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .cancelled, .failed: self?.limiter.release()
+            default: break
+            }
+        }
         conn.start(queue: queue)
+        // Watchdog: bound every connection's lifetime so a peer that connects and
+        // never sends a complete request can't pin a file descriptor forever.
+        queue.asyncAfter(deadline: .now() + VFConstants.Streaming.connectionTimeout) {
+            conn.cancel()
+        }
         receiveRequest(conn, buffer: Data())
     }
 
@@ -368,35 +404,43 @@ final class HLSServer {
 
     // MARK: - LAN IP discovery
 
-    /// Returns the primary non-loopback IPv4 address (prefers en0/en1) for building receiver URLs.
+    /// Returns the Mac's private LAN IPv4 address (RFC1918) for receiver URLs,
+    /// or nil if there's no usable LAN address. Skips loopback, VPN/tunnel, and
+    /// bridge interfaces so we never hand a TV an unreachable (e.g. Tailscale) IP.
     nonisolated static func localIPAddress() -> String? {
-        var address: String?
         var ifaddr: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&ifaddr) == 0, let first = ifaddr else { return nil }
         defer { freeifaddrs(ifaddr) }
 
+        let excludedPrefixes = ["utun", "ipsec", "ppp", "bridge", "awdl", "llw", "gif", "stf"]
         var candidates: [(name: String, ip: String)] = []
         var ptr: UnsafeMutablePointer<ifaddrs>? = first
         while let p = ptr {
+            defer { ptr = p.pointee.ifa_next }
             let interface = p.pointee
-            let family = interface.ifa_addr.pointee.sa_family
-            if family == UInt8(AF_INET) {
-                let name = String(cString: interface.ifa_name)
-                var addr = interface.ifa_addr.pointee
-                var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                if getnameinfo(&addr, socklen_t(interface.ifa_addr.pointee.sa_len),
-                               &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
-                    let ip = String(cString: host)
-                    if ip != "127.0.0.1" { candidates.append((name, ip)) }
-                }
-            }
-            ptr = interface.ifa_next
+            guard interface.ifa_addr.pointee.sa_family == UInt8(AF_INET) else { continue }
+            let name = String(cString: interface.ifa_name)
+            if excludedPrefixes.contains(where: { name.hasPrefix($0) }) { continue }
+            var addr = interface.ifa_addr.pointee
+            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            guard getnameinfo(&addr, socklen_t(interface.ifa_addr.pointee.sa_len),
+                              &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 else { continue }
+            let ip = String(cString: host)
+            if isPrivateIPv4(ip) { candidates.append((name, ip)) }
         }
-        // Prefer common Wi-Fi/Ethernet interfaces.
-        for pref in ["en0", "en1", "en2"] {
-            if let match = candidates.first(where: { $0.name == pref }) { address = match.ip; break }
-        }
-        if address == nil { address = candidates.first?.ip }
-        return address
+        // Prefer Wi-Fi/Ethernet (en*), else the first private candidate.
+        if let en = candidates.first(where: { $0.name.hasPrefix("en") }) { return en.ip }
+        return candidates.first?.ip
+    }
+
+    /// RFC1918 / link-local check: 10/8, 172.16–31/12, 192.168/16, 169.254/16.
+    nonisolated private static func isPrivateIPv4(_ ip: String) -> Bool {
+        let o = ip.split(separator: ".").compactMap { Int($0) }
+        guard o.count == 4 else { return false }
+        if o[0] == 10 { return true }
+        if o[0] == 172, (16...31).contains(o[1]) { return true }
+        if o[0] == 192, o[1] == 168 { return true }
+        if o[0] == 169, o[1] == 254 { return true }
+        return false
     }
 }

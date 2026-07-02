@@ -22,7 +22,14 @@ enum VFConstants {
         /// Target LL-HLS segment duration in seconds.
         static let segmentDuration: Double = 1.0
         /// How many recent media segments to retain per stream in memory.
-        static let segmentWindow = 8
+        /// Must comfortably exceed a player's live-edge lag (AVPlayer sits ~3
+        /// target-durations back) so a segment isn't evicted before it's fetched.
+        static let segmentWindow = 16
+        /// Max simultaneous HTTP connections before new ones are dropped.
+        static let maxConnections = 64
+        /// Seconds a single HTTP connection may live before it's force-closed
+        /// (bounds slow-loris / never-complete requests).
+        static let connectionTimeout: Double = 12
     }
 
     enum Security {

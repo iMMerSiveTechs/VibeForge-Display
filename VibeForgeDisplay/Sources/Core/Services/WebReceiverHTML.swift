@@ -98,10 +98,12 @@ enum WebReceiver {
       return;
     }
     // Fallback for browsers without native HLS (Android/Fire TV/Chrome).
-    // Loaded cross-origin with no referrer. For untrusted receiver networks,
-    // pin an SRI hash or self-host this file.
+    // Loaded cross-origin, no referrer, and pinned with Subresource Integrity so
+    // a tampered/compromised CDN copy is rejected before it can run (it would
+    // otherwise execute same-origin with the session token in scope).
     const script = document.createElement('script');
     script.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js';
+    script.integrity = 'sha384-w6Gb3fXHb5e1LUYa/hYA5Q41bEDglN5ZPCG7Jvnoo8/X90oGnlPqBlBJCe38mEMm';
     script.crossOrigin = 'anonymous';
     script.referrerPolicy = 'no-referrer';
     script.onload = () => {
