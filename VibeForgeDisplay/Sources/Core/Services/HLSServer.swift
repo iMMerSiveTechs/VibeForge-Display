@@ -171,13 +171,15 @@ final class HLSServer {
     }
 
     // MARK: - Connection handling (minimal HTTP/1.1, one request per connection)
+    // These run on the network `queue`, not the main actor. They only touch
+    // Sendable `let`s (store, security, queue), so they are `nonisolated`.
 
-    private func handle(_ conn: NWConnection) {
+    nonisolated private func handle(_ conn: NWConnection) {
         conn.start(queue: queue)
         receiveRequest(conn, buffer: Data())
     }
 
-    private func receiveRequest(_ conn: NWConnection, buffer: Data) {
+    nonisolated private func receiveRequest(_ conn: NWConnection, buffer: Data) {
         conn.receive(minimumIncompleteLength: 1, maximumLength: 16 * 1024) { [weak self] data, _, isComplete, error in
             guard let self else { return }
             var buf = buffer
@@ -185,7 +187,7 @@ final class HLSServer {
             if let range = buf.range(of: Data("\r\n\r\n".utf8)) {
                 let headerData = buf.subdata(in: buf.startIndex..<range.lowerBound)
                 let header = String(decoding: headerData, as: UTF8.self)
-                Task { @MainActor in self.route(header: header, conn: conn) }
+                self.route(header: header, conn: conn)
                 return
             }
             if error != nil || isComplete { conn.cancel(); return }
@@ -241,7 +243,7 @@ final class HLSServer {
         return nil
     }
 
-    private func route(header: String, conn: NWConnection) {
+    nonisolated private func route(header: String, conn: NWConnection) {
         // Defense against DNS-rebinding: require an IP/localhost Host.
         guard HLSServer.isAllowedHost(HLSServer.headerValue("Host", in: header)) else {
             sendStatus(conn, 403); return
@@ -301,7 +303,7 @@ final class HLSServer {
     }
 
     /// POST/GET /pair?pin=NNNNNN — exchanges a valid PIN for the session token.
-    private func handlePair(fullPath: String, conn: NWConnection) {
+    nonisolated private func handlePair(fullPath: String, conn: NWConnection) {
         guard let pin = HLSServer.queryParam("pin", in: fullPath),
               let token = security.redeem(pin: pin) else {
             sendStatus(conn, 403); return
@@ -312,7 +314,7 @@ final class HLSServer {
 
     // MARK: - HTTP responses
 
-    private func send(_ conn: NWConnection, body: Data, contentType: String) {
+    nonisolated private func send(_ conn: NWConnection, body: Data, contentType: String) {
         // No CORS header: the bundled web receiver is same-origin, and a wildcard
         // would let any website read the (unauthenticated-to-the-browser) screen
         // stream cross-origin. X-Content-Type-Options hardens sniffing.
@@ -327,7 +329,7 @@ final class HLSServer {
         conn.send(content: out, completion: .contentProcessed { _ in conn.cancel() })
     }
 
-    private func sendStatus(_ conn: NWConnection, _ code: Int) {
+    nonisolated private func sendStatus(_ conn: NWConnection, _ code: Int) {
         let reason = code == 404 ? "Not Found" : "Error"
         let head = "HTTP/1.1 \(code) \(reason)\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
         conn.send(content: Data(head.utf8), completion: .contentProcessed { _ in conn.cancel() })
