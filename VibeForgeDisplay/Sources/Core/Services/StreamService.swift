@@ -167,6 +167,30 @@ final class StreamService {
         for id in Array(streamingRouteIDs) { stopRoute(id) }
     }
 
+    /// Starts routes flagged auto-start shortly after launch. Respects the
+    /// virtual-display safe mode: a virtual-screen route is only auto-started if
+    /// its screen is already active (i.e. the last session exited cleanly), so we
+    /// never force-create a possibly-black-screening display at launch.
+    func scheduleAutoStart() {
+        let autos = routes.filter(\.autoStart)
+        guard !autos.isEmpty else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            for route in autos {
+                switch route.sourceKind {
+                case .surface:
+                    await startRoute(route.id)
+                case .virtualScreen:
+                    if virtualDisplayService.isActive(route.sourceID) {
+                        await startRoute(route.id)
+                    } else {
+                        logService.log(.system, "Skipped auto-start (screen inactive): \(route.name)")
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: Persistence
 
     private func loadRoutes() {

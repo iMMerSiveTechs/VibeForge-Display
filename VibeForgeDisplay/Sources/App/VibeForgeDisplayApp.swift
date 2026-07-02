@@ -36,6 +36,7 @@ struct VibeForgeDisplayApp: App {
 
 struct MainWindowView: View {
     @Bindable var appState: AppState
+    @AppStorage("vf.onboarded") private var onboarded = false
 
     var body: some View {
         NavigationSplitView {
@@ -44,6 +45,10 @@ struct MainWindowView: View {
             detailView
         }
         .background(VFTheme.Colors.background)
+        .sheet(isPresented: Binding(get: { !onboarded }, set: { if $0 == false { onboarded = true } })) {
+            OnboardingView(onDone: { onboarded = true })
+                .interactiveDismissDisabled(true)
+        }
     }
 
     @ViewBuilder
@@ -77,6 +82,7 @@ struct MainWindowView: View {
                 streamService: appState.streamService,
                 virtualDisplayService: appState.virtualDisplayService,
                 surfaceService: appState.surfaceService,
+                wallPresetService: appState.wallPresetService,
                 hlsServer: appState.hlsServer,
                 logService: appState.logService
             )

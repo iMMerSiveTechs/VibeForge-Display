@@ -10,6 +10,7 @@ final class AppState {
     let virtualDisplayService: VirtualDisplayService
     let hlsServer: HLSServer
     let streamService: StreamService
+    let wallPresetService: WallPresetService
     let persistence: PersistenceManager
 
     var selectedTab: SidebarTab = .virtualScreens
@@ -59,10 +60,19 @@ final class AppState {
         self.screenService = screenService
         self.modeService = modeService
         self.surfaceService = surfaceService
+        let wallPresetService = WallPresetService(
+            persistence: persistence,
+            logService: logService,
+            virtualDisplayService: virtualDisplayService,
+            streamService: streamService
+        )
+
         self.virtualDisplayService = virtualDisplayService
         self.hlsServer = hlsServer
         self.streamService = streamService
+        self.wallPresetService = wallPresetService
 
         logService.log(.system, "VibeForge Display launched", detail: "v\(VFConstants.appVersion)")
+        streamService.scheduleAutoStart()
     }
 }

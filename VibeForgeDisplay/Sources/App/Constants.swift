@@ -10,6 +10,7 @@ enum VFConstants {
     static let surfacesFileName = "surfaces.json"
     static let virtualScreensFileName = "virtual_screens.json"
     static let routesFileName = "routes.json"
+    static let wallPresetsFileName = "wall_presets.json"
     static let logFileName = "events.log"
     static let cleanExitMarkerFileName = "clean_exit.marker"
 

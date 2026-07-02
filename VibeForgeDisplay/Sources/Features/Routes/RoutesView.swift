@@ -5,6 +5,7 @@ struct RoutesView: View {
     let streamService: StreamService
     let virtualDisplayService: VirtualDisplayService
     let surfaceService: SurfaceService
+    let wallPresetService: WallPresetService
     let hlsServer: HLSServer
     let logService: LogService
 
@@ -20,6 +21,8 @@ struct RoutesView: View {
             header
             Divider().background(VFTheme.Colors.border)
             infoBar
+            Divider().background(VFTheme.Colors.border)
+            WallPresetsBar(wallPresetService: wallPresetService)
             Divider().background(VFTheme.Colors.border)
             content
         }
@@ -213,6 +216,10 @@ struct RouteRow: View {
                     StatusBadge(label: isStreaming ? "Live" : "Idle",
                                 color: isStreaming ? VFTheme.Colors.success : VFTheme.Colors.textTertiary)
                     StatusBadge(label: route.quality.rawValue, color: VFTheme.Colors.accent)
+                    if route.autoStart {
+                        StatusBadge(label: "Auto", color: VFTheme.Colors.warning)
+                    }
+                    StatusBadge(label: route.sourceKind.rawValue, color: VFTheme.Colors.textTertiary)
                 }
                 Text("Source: \(sourceName) · \(route.quality.detail)")
                     .font(VFTheme.Typography.caption)
@@ -383,6 +390,7 @@ struct CreateRouteSheet: View {
     @State private var sourceKind: RouteSourceKind = .virtualScreen
     @State private var selectedSourceID: UUID?
     @State private var quality: StreamQuality = .balanced
+    @State private var autoStart = false
 
     private var hasVirtual: Bool { !virtualDisplayService.configs.isEmpty }
     private var hasSurface: Bool { !surfaceService.configs.isEmpty }
@@ -457,6 +465,17 @@ struct CreateRouteSheet: View {
                 .labelsHidden()
             }
 
+            Toggle(isOn: $autoStart) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Start automatically on launch")
+                        .font(VFTheme.Typography.body)
+                        .foregroundStyle(VFTheme.Colors.textPrimary)
+                    Text("Virtual-screen routes only auto-start if the screen came up cleanly (safe mode).")
+                        .font(VFTheme.Typography.caption)
+                        .foregroundStyle(VFTheme.Colors.textTertiary)
+                }
+            }
+
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
@@ -482,7 +501,8 @@ struct CreateRouteSheet: View {
     private func create() {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, let sourceID = selectedSourceID else { return }
-        let route = RouteConfig(name: trimmed, sourceKind: sourceKind, sourceID: sourceID, quality: quality)
+        let route = RouteConfig(name: trimmed, sourceKind: sourceKind, sourceID: sourceID,
+                                quality: quality, autoStart: autoStart)
         streamService.addRoute(route)
         dismiss()
     }
