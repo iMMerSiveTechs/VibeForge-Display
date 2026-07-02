@@ -300,6 +300,11 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
     private var videoInput: AVAssetWriterInput?
     private var sessionStarted = false
     private var isStopping = false
+    // Set synchronously the instant stop() is called (any thread), so the writer
+    // delegate can't push a late final segment into a re-registered stream key
+    // after a rapid stop -> start on the same route.
+    private let stopLock = NSLock()
+    private var stopped = false
     private let sampleQueue = DispatchQueue(label: "vibeforge.stream.samples")
 
     // Zero-based encode timeline (so init/segment times are consistent) plus a
@@ -494,6 +499,8 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
 
     func assetWriter(_ writer: AVAssetWriter, didOutputSegmentData segmentData: Data,
                      segmentType: AVAssetSegmentType, segmentReport: AVAssetSegmentReport?) {
+        stopLock.lock(); let done = stopped; stopLock.unlock()
+        guard !done else { return }   // drop late segments after stop()
         switch segmentType {
         case .initialization:
             store.setInit(key: route.streamKey, data: segmentData)
@@ -511,6 +518,7 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
 
     func stop() {
         onStopped = nil
+        stopLock.lock(); stopped = true; stopLock.unlock()
         stream?.stopCapture { _ in }
         stream = nil
         // Finalize the writer on sampleQueue so it can't race an in-flight append
