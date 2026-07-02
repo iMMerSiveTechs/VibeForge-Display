@@ -96,6 +96,7 @@ struct RoutesView: View {
                             sourceName: sourceName(for: route),
                             isStreaming: streamService.isStreaming(route.id),
                             receiverURL: streamService.receiverURL(for: route),
+                            statsProvider: { streamService.stats(for: route.id) },
                             onToggle: { toggle(route) },
                             onDelete: { streamService.removeRoute(route.id) }
                         )
@@ -145,6 +146,7 @@ struct RouteRow: View {
     let sourceName: String
     let isStreaming: Bool
     let receiverURL: String
+    let statsProvider: () -> StreamService.RouteStats?
     let onToggle: () -> Void
     let onDelete: () -> Void
 
@@ -157,6 +159,7 @@ struct RouteRow: View {
             if isStreaming {
                 Divider().background(VFTheme.Colors.border)
                 streamingDetail
+                statsLine
             }
         }
         .padding(VFTheme.Spacing.lg)
@@ -242,6 +245,28 @@ struct RouteRow: View {
                     .foregroundStyle(VFTheme.Colors.textTertiary)
             }
             Spacer()
+        }
+    }
+
+    /// Live telemetry line, refreshed every second while streaming.
+    private var statsLine: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let s = statsProvider()
+            HStack(spacing: VFTheme.Spacing.md) {
+                Image(systemName: "waveform.path.ecg")
+                    .foregroundStyle(VFTheme.Colors.success)
+                if let s {
+                    Text(String(format: "%.0f fps avg", s.avgFPS))
+                    Text("· \(s.frames) frames")
+                    Text("· \(s.segments) segments")
+                    Text(String(format: "· %.0fs", s.uptime))
+                } else {
+                    Text("Starting…")
+                }
+                Spacer()
+            }
+            .font(VFTheme.Typography.mono)
+            .foregroundStyle(VFTheme.Colors.textTertiary)
         }
     }
 

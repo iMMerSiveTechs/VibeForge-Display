@@ -60,6 +60,19 @@ final class StreamService {
 
     func isStreaming(_ id: UUID) -> Bool { streamingRouteIDs.contains(id) }
 
+    struct RouteStats {
+        let frames: Int
+        let segments: Int
+        let startedAt: Date
+        var uptime: TimeInterval { max(0, Date().timeIntervalSince(startedAt)) }
+        var avgFPS: Double { uptime > 0.5 ? Double(frames) / uptime : 0 }
+    }
+
+    func stats(for id: UUID) -> RouteStats? {
+        guard let s = sessions[id] else { return nil }
+        return RouteStats(frames: s.framesEncoded(), segments: s.segmentsOut(), startedAt: s.startedAt)
+    }
+
     func receiverURL(for route: RouteConfig) -> String {
         hlsServer.receiverURL(streamKey: route.streamKey)
     }
@@ -159,6 +172,15 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
     private var sessionStarted = false
     private let sampleQueue = DispatchQueue(label: "vibeforge.stream.samples")
 
+    // Lightweight live telemetry (read from the UI on the main thread).
+    let startedAt = Date()
+    private let statsLock = NSLock()
+    private var _framesEncoded = 0
+    private var _segmentsOut = 0
+
+    func framesEncoded() -> Int { statsLock.lock(); defer { statsLock.unlock() }; return _framesEncoded }
+    func segmentsOut() -> Int { statsLock.lock(); defer { statsLock.unlock() }; return _segmentsOut }
+
     init(route: RouteConfig, displayID: CGDirectDisplayID, sourceWidth: Int, sourceHeight: Int,
          store: HLSSegmentStore, logService: LogService) {
         self.route = route
@@ -247,6 +269,7 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
         }
         if input.isReadyForMoreMediaData {
             input.append(sampleBuffer)
+            statsLock.lock(); _framesEncoded += 1; statsLock.unlock()
         }
     }
 
@@ -276,6 +299,7 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
             let duration = segmentReport?.trackReports.first?.duration.seconds
                 ?? VFConstants.Streaming.segmentDuration
             store.appendSegment(key: route.streamKey, data: segmentData, duration: duration)
+            statsLock.lock(); _segmentsOut += 1; statsLock.unlock()
         @unknown default:
             break
         }
