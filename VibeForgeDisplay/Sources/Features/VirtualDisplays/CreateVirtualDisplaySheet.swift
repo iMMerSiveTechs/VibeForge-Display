@@ -106,7 +106,7 @@ struct CreateVirtualDisplaySheet: View {
                     infoRow("1.", "A virtual display is created that macOS treats as a real monitor")
                     infoRow("2.", "It appears in System Settings > Displays alongside your real screens")
                     infoRow("3.", "You can arrange it and extend your desktop to it")
-                    infoRow("4.", "Use AirPlay or HDMI to show the virtual display on your TV")
+                    infoRow("4.", "To show it on a wireless TV, create a Route (Routes tab) — VibeForge streams it over your network")
                 }
             }
             .padding(VFTheme.Spacing.md)

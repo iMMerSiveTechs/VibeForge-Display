@@ -73,7 +73,12 @@ struct MainWindowView: View {
                 logService: appState.logService
             )
         case .routes:
-            RoutesPlaceholderView()
+            RoutesView(
+                streamService: appState.streamService,
+                virtualDisplayService: appState.virtualDisplayService,
+                hlsServer: appState.hlsServer,
+                logService: appState.logService
+            )
         case .logs:
             LogsView(
                 logService: appState.logService,
@@ -84,21 +89,6 @@ struct MainWindowView: View {
         case .settings:
             SettingsView(appState: appState)
         }
-    }
-}
-
-// MARK: - Routes Placeholder
-
-struct RoutesPlaceholderView: View {
-    var body: some View {
-        EmptyStateView(
-            icon: "point.3.connected.trianglepath.dotted",
-            title: "Routes Coming Soon",
-            message: "Stream your virtual screens or Surfaces to other TVs, displays, and devices. This feature is in development.",
-            actionLabel: nil,
-            action: {}
-        )
-        .background(VFTheme.Colors.background)
     }
 }
 
@@ -175,7 +165,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: VFTheme.Spacing.sm) {
                 limitRow("Virtual screens use macOS display APIs to create additional monitors")
                 limitRow("They appear in System Settings > Displays as real screens")
-                limitRow("Use AirPlay or display arrangement to show content on your TVs")
+                limitRow("Wired TVs use HDMI/display arrangement; wireless TVs use Routes (VibeForge's own stream, not Apple AirPlay)")
                 limitRow("Surfaces are app-managed utility workspaces with widgets")
                 limitRow("Routes (streaming to other devices) coming in a future update")
             }

@@ -83,7 +83,12 @@ struct SidebarNavigation: View {
                 countBadge(openCount, color: VFTheme.Colors.success)
             }
         case .routes:
-            StatusBadge(label: "Soon", color: VFTheme.Colors.textTertiary)
+            let live = appState.streamService.streamingRouteIDs.count
+            if live > 0 {
+                countBadge(live, color: VFTheme.Colors.success)
+            } else if !appState.streamService.routes.isEmpty {
+                countBadge(appState.streamService.routes.count, color: VFTheme.Colors.textTertiary)
+            }
         default:
             EmptyView()
         }

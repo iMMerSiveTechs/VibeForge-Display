@@ -132,7 +132,8 @@ In Xcode:
 
 ### Troubleshooting
 
-- **"VibeForgeDisplay" cannot be opened because the developer cannot be verified**: Right-click the app > Open > click Open again
+- **"VibeForgeDisplay" cannot be opened because the developer cannot be verified**: Go to System Settings > Privacy & Security, scroll to the bottom, and click "Open Anyway" (the old right-click → Open trick was removed in macOS Sequoia). Since you build it yourself in Xcode, you normally won't hit this.
+- **Screen Recording permission prompt**: Routes (streaming) needs Screen Recording permission. Grant it in System Settings > Privacy & Security > Screen Recording, then relaunch the app.
 - **Build errors about signing**: Make sure you selected a Team in Signing & Capabilities
 - **No menu bar icon**: The app runs as a menu bar app (no dock icon). Look in the top-right of your screen
 - **Virtual display doesn't appear**: Make sure you're running macOS 14+ (check Apple menu > About This Mac)

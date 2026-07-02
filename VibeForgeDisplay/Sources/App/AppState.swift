@@ -8,6 +8,8 @@ final class AppState {
     let modeService: ModeService
     let surfaceService: SurfaceService
     let virtualDisplayService: VirtualDisplayService
+    let hlsServer: HLSServer
+    let streamService: StreamService
     let persistence: PersistenceManager
 
     var selectedTab: SidebarTab = .virtualScreens
@@ -43,6 +45,13 @@ final class AppState {
         let modeService = ModeService(persistence: persistence, logService: logService)
         let surfaceService = SurfaceService(persistence: persistence, logService: logService)
         let virtualDisplayService = VirtualDisplayService(persistence: persistence, logService: logService)
+        let hlsServer = HLSServer(logService: logService)
+        let streamService = StreamService(
+            persistence: persistence,
+            logService: logService,
+            hlsServer: hlsServer,
+            virtualDisplayService: virtualDisplayService
+        )
 
         self.persistence = persistence
         self.logService = logService
@@ -50,6 +59,8 @@ final class AppState {
         self.modeService = modeService
         self.surfaceService = surfaceService
         self.virtualDisplayService = virtualDisplayService
+        self.hlsServer = hlsServer
+        self.streamService = streamService
 
         logService.log(.system, "VibeForge Display launched", detail: "v\(VFConstants.appVersion)")
     }

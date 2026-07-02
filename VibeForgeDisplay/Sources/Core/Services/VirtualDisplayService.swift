@@ -24,7 +24,29 @@ final class VirtualDisplayService {
         self.persistence = persistence
         self.logService = logService
         loadConfigs()
-        autoCreateDisplays()
+
+        // Black-screen crash guard: a bad virtual-display config can make macOS
+        // go dark, forcing a reboot. If we auto-created on every launch, we could
+        // trap the user in a reboot loop. So we only auto-create when the PREVIOUS
+        // session ended cleanly (a marker file we arm ~20s after a stable launch).
+        // A hard reboot clears the marker, so the next launch comes up safe.
+        let lastRunWasStable = persistence.exists(VFConstants.cleanExitMarkerFileName)
+        try? persistence.delete(VFConstants.cleanExitMarkerFileName)
+        if lastRunWasStable {
+            autoCreateDisplays()
+        } else if configs.contains(where: \.autoCreateOnLaunch) {
+            logService.log(.system, "Safe mode: skipped auto-creating virtual screens",
+                           detail: "Last session didn't exit cleanly. Activate manually once your display is stable.")
+        }
+        armStableRunMarker()
+    }
+
+    /// Marks this run as stable after it has survived ~20s, so the next launch may auto-create.
+    private func armStableRunMarker() {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 20_000_000_000)
+            try? persistence.save(Date(), to: VFConstants.cleanExitMarkerFileName)
+        }
     }
 
     // MARK: - Create Virtual Display

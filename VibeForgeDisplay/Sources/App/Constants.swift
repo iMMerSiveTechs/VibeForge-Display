@@ -8,7 +8,21 @@ enum VFConstants {
     static let appSupportDirectoryName = "VibeForgeDisplay"
     static let modesFileName = "modes.json"
     static let surfacesFileName = "surfaces.json"
+    static let virtualScreensFileName = "virtual_screens.json"
+    static let routesFileName = "routes.json"
     static let logFileName = "events.log"
+    static let cleanExitMarkerFileName = "clean_exit.marker"
+
+    enum Streaming {
+        /// TCP port the embedded HLS/HTTP server listens on.
+        static let httpPort: UInt16 = 8760
+        /// Bonjour service type advertised for receiver discovery.
+        static let bonjourServiceType = "_vibeforge._tcp"
+        /// Target LL-HLS segment duration in seconds.
+        static let segmentDuration: Double = 1.0
+        /// How many recent media segments to retain per stream in memory.
+        static let segmentWindow = 8
+    }
 
     static var appSupportURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first

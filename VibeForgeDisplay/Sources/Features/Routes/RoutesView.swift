@@ -1,0 +1,334 @@
+import SwiftUI
+import AppKit
+
+struct RoutesView: View {
+    let streamService: StreamService
+    let virtualDisplayService: VirtualDisplayService
+    let hlsServer: HLSServer
+    let logService: LogService
+
+    @State private var showCreateSheet = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            Divider().background(VFTheme.Colors.border)
+            infoBar
+            Divider().background(VFTheme.Colors.border)
+            content
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(VFTheme.Colors.background)
+        .sheet(isPresented: $showCreateSheet) {
+            CreateRouteSheet(
+                streamService: streamService,
+                virtualDisplayService: virtualDisplayService
+            )
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: VFTheme.Spacing.xs) {
+                Text("Routes")
+                    .font(VFTheme.Typography.largeTitle)
+                    .foregroundStyle(VFTheme.Colors.textPrimary)
+                Text("Stream a virtual screen to any TV or device on your network")
+                    .font(VFTheme.Typography.caption)
+                    .foregroundStyle(VFTheme.Colors.textSecondary)
+            }
+            Spacer()
+            Button(action: { showCreateSheet = true }) {
+                Label("Add Route", systemImage: "plus")
+                    .font(VFTheme.Typography.caption)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(VFTheme.Colors.accent)
+            .disabled(virtualDisplayService.configs.isEmpty)
+        }
+        .padding(VFTheme.Spacing.xl)
+    }
+
+    private var infoBar: some View {
+        HStack(spacing: VFTheme.Spacing.lg) {
+            HStack(spacing: VFTheme.Spacing.xs) {
+                Circle()
+                    .fill(hlsServer.isRunning ? VFTheme.Colors.success : VFTheme.Colors.textTertiary)
+                    .frame(width: 7, height: 7)
+                Text(hlsServer.isRunning ? "Server on \(HLSServer.localIPAddress() ?? "?"):\(hlsServer.port)" : "Server idle")
+                    .font(VFTheme.Typography.caption)
+                    .foregroundStyle(VFTheme.Colors.textSecondary)
+            }
+            Text("\(streamService.streamingRouteIDs.count) streaming")
+                .font(VFTheme.Typography.caption)
+                .foregroundStyle(VFTheme.Colors.textSecondary)
+            Spacer()
+        }
+        .padding(.horizontal, VFTheme.Spacing.xl)
+        .padding(.vertical, VFTheme.Spacing.sm)
+        .background(VFTheme.Colors.surface.opacity(0.3))
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if virtualDisplayService.configs.isEmpty {
+            EmptyStateView(
+                icon: "point.3.connected.trianglepath.dotted",
+                title: "Create a Virtual Screen First",
+                message: "Routes stream a virtual screen to a TV. Add a Virtual Screen, then come back here to route it.",
+                actionLabel: nil,
+                action: {}
+            )
+        } else if streamService.routes.isEmpty {
+            EmptyStateView(
+                icon: "point.3.connected.trianglepath.dotted",
+                title: "No Routes Yet",
+                message: "Add a route to stream one of your virtual screens to a TV. On the TV (or a phone), open the link or scan the QR code shown when streaming starts.",
+                actionLabel: "Add Route",
+                action: { showCreateSheet = true }
+            )
+        } else {
+            ScrollView {
+                LazyVStack(spacing: VFTheme.Spacing.md) {
+                    ForEach(streamService.routes) { route in
+                        RouteRow(
+                            route: route,
+                            sourceName: sourceName(for: route),
+                            isStreaming: streamService.isStreaming(route.id),
+                            receiverURL: streamService.receiverURL(for: route),
+                            onToggle: { toggle(route) },
+                            onDelete: { streamService.removeRoute(route.id) }
+                        )
+                    }
+                }
+                .padding(VFTheme.Spacing.xl)
+
+                receiverNote
+                    .padding(.horizontal, VFTheme.Spacing.xl)
+                    .padding(.bottom, VFTheme.Spacing.xl)
+            }
+        }
+    }
+
+    private var receiverNote: some View {
+        VStack(alignment: .leading, spacing: VFTheme.Spacing.xs) {
+            Label("How receivers connect", systemImage: "info.circle")
+                .font(VFTheme.Typography.headline)
+                .foregroundStyle(VFTheme.Colors.textSecondary)
+            Text("Phones, laptops, and smart TVs/sticks with a browser: open the link (or scan the QR). Apple TV has no browser — a native Apple TV receiver app is coming next. This is VibeForge's own stream, not Apple AirPlay.")
+                .font(VFTheme.Typography.caption)
+                .foregroundStyle(VFTheme.Colors.textTertiary)
+        }
+        .padding(VFTheme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(VFTheme.Colors.accentSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: VFTheme.Radius.md))
+    }
+
+    private func sourceName(for route: RouteConfig) -> String {
+        virtualDisplayService.configs.first(where: { $0.id == route.sourceVirtualScreenID })?.name ?? "Missing source"
+    }
+
+    private func toggle(_ route: RouteConfig) {
+        if streamService.isStreaming(route.id) {
+            streamService.stopRoute(route.id)
+        } else {
+            Task { await streamService.startRoute(route.id) }
+        }
+    }
+}
+
+// MARK: - Route Row
+
+struct RouteRow: View {
+    let route: RouteConfig
+    let sourceName: String
+    let isStreaming: Bool
+    let receiverURL: String
+    let onToggle: () -> Void
+    let onDelete: () -> Void
+
+    @State private var isHovering = false
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: VFTheme.Spacing.md) {
+            headerRow
+            if isStreaming {
+                Divider().background(VFTheme.Colors.border)
+                streamingDetail
+            }
+        }
+        .padding(VFTheme.Spacing.lg)
+        .background(VFTheme.Colors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: VFTheme.Radius.lg))
+        .overlay(
+            RoundedRectangle(cornerRadius: VFTheme.Radius.lg)
+                .stroke(isStreaming ? VFTheme.Colors.success.opacity(0.5) : VFTheme.Colors.border, lineWidth: 1)
+        )
+        .onHover { isHovering = $0 }
+    }
+
+    private var headerRow: some View {
+        HStack(spacing: VFTheme.Spacing.md) {
+            Image(systemName: "dot.radiowaves.left.and.right")
+                .font(.system(size: 22))
+                .foregroundStyle(isStreaming ? VFTheme.Colors.success : VFTheme.Colors.textTertiary)
+                .frame(width: 36)
+
+            VStack(alignment: .leading, spacing: VFTheme.Spacing.xxs) {
+                HStack(spacing: VFTheme.Spacing.sm) {
+                    Text(route.name)
+                        .font(VFTheme.Typography.title)
+                        .foregroundStyle(VFTheme.Colors.textPrimary)
+                    StatusBadge(label: isStreaming ? "Live" : "Idle",
+                                color: isStreaming ? VFTheme.Colors.success : VFTheme.Colors.textTertiary)
+                    StatusBadge(label: route.quality.rawValue, color: VFTheme.Colors.accent)
+                }
+                Text("Source: \(sourceName) · \(route.quality.detail)")
+                    .font(VFTheme.Typography.caption)
+                    .foregroundStyle(VFTheme.Colors.textSecondary)
+            }
+
+            Spacer()
+
+            HStack(spacing: VFTheme.Spacing.sm) {
+                Button(action: onToggle) {
+                    Label(isStreaming ? "Stop" : "Start",
+                          systemImage: isStreaming ? "stop.fill" : "play.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(isStreaming ? VFTheme.Colors.warning : VFTheme.Colors.accent)
+                .controlSize(.small)
+
+                if isHovering && !isStreaming {
+                    Button(action: onDelete) {
+                        Image(systemName: "trash").foregroundStyle(VFTheme.Colors.error)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    private var streamingDetail: some View {
+        HStack(alignment: .top, spacing: VFTheme.Spacing.lg) {
+            if let qr = QRCode.nsImage(from: receiverURL, size: 140) {
+                Image(nsImage: qr)
+                    .interpolation(.none)
+                    .resizable()
+                    .frame(width: 140, height: 140)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: VFTheme.Radius.sm))
+            }
+            VStack(alignment: .leading, spacing: VFTheme.Spacing.sm) {
+                Text("Open on the TV or phone")
+                    .font(VFTheme.Typography.headline)
+                    .foregroundStyle(VFTheme.Colors.textSecondary)
+                Text(receiverURL)
+                    .font(VFTheme.Typography.mono)
+                    .foregroundStyle(VFTheme.Colors.textPrimary)
+                    .textSelection(.enabled)
+                Button(action: copy) {
+                    Label(copied ? "Copied" : "Copy link",
+                          systemImage: copied ? "checkmark" : "doc.on.doc")
+                        .font(VFTheme.Typography.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                Text("Scan the QR with a phone, or type the link into a browser on the TV / streaming stick.")
+                    .font(VFTheme.Typography.caption)
+                    .foregroundStyle(VFTheme.Colors.textTertiary)
+            }
+            Spacer()
+        }
+    }
+
+    private func copy() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(receiverURL, forType: .string)
+        copied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
+    }
+}
+
+// MARK: - Create Route Sheet
+
+struct CreateRouteSheet: View {
+    let streamService: StreamService
+    let virtualDisplayService: VirtualDisplayService
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var selectedSourceID: UUID?
+    @State private var quality: StreamQuality = .balanced
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: VFTheme.Spacing.xl) {
+            Text("Add Route")
+                .font(VFTheme.Typography.largeTitle)
+                .foregroundStyle(VFTheme.Colors.textPrimary)
+
+            VStack(alignment: .leading, spacing: VFTheme.Spacing.sm) {
+                Text("Route Name")
+                    .font(VFTheme.Typography.headline)
+                    .foregroundStyle(VFTheme.Colors.textSecondary)
+                TextField("e.g. Living Room TV", text: $name)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            VStack(alignment: .leading, spacing: VFTheme.Spacing.sm) {
+                Text("Source Virtual Screen")
+                    .font(VFTheme.Typography.headline)
+                    .foregroundStyle(VFTheme.Colors.textSecondary)
+                Picker("", selection: $selectedSourceID) {
+                    Text("Select…").tag(nil as UUID?)
+                    ForEach(virtualDisplayService.configs) { config in
+                        Text("\(config.name) · \(config.resolutionLabel)").tag(config.id as UUID?)
+                    }
+                }
+                .labelsHidden()
+            }
+
+            VStack(alignment: .leading, spacing: VFTheme.Spacing.sm) {
+                Text("Quality")
+                    .font(VFTheme.Typography.headline)
+                    .foregroundStyle(VFTheme.Colors.textSecondary)
+                Picker("", selection: $quality) {
+                    ForEach(StreamQuality.allCases) { q in
+                        Text("\(q.rawValue) — \(q.detail)").tag(q)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.cancelAction)
+                Button("Create") { create() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(VFTheme.Colors.accent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || selectedSourceID == nil)
+            }
+        }
+        .padding(VFTheme.Spacing.xl)
+        .frame(width: 460)
+        .background(VFTheme.Colors.background)
+        .onAppear {
+            if selectedSourceID == nil { selectedSourceID = virtualDisplayService.configs.first?.id }
+        }
+    }
+
+    private func create() {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, let sourceID = selectedSourceID else { return }
+        let route = RouteConfig(name: trimmed, sourceVirtualScreenID: sourceID, quality: quality)
+        streamService.addRoute(route)
+        dismiss()
+    }
+}
