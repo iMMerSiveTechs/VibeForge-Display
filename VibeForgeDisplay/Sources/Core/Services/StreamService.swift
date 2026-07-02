@@ -145,7 +145,7 @@ final class StreamService {
             sessions[id] = session
             streamingRouteIDs.insert(id)
             logService.log(.system, "Streaming started: \(route.name)",
-                           detail: receiverURL(for: route))
+                           detail: hlsServer.redactedReceiverURL(streamKey: route.streamKey))
         } catch {
             hlsServer.store.unregister(key: route.streamKey)
             logService.log(.error, "Failed to start stream: \(route.name)",

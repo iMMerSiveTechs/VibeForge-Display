@@ -97,19 +97,36 @@ final class HLSServer {
     private let queue = DispatchQueue(label: "vibeforge.hls.http")
     private let logService: LogService
 
+    let security = SessionSecurity()
+
     init(logService: LogService) {
         self.logService = logService
     }
 
     var port: UInt16 { VFConstants.Streaming.httpPort }
 
-    /// URL a receiver on the LAN should open, optionally deep-linked to a stream.
+    /// URL a receiver on the LAN should open. Carries the session token so the
+    /// bundled web receiver is authorized; keep this out of logs.
     func receiverURL(streamKey: String? = nil) -> String {
         let host = HLSServer.localIPAddress() ?? "localhost"
-        let base = "http://\(host):\(port)"
-        if let key = streamKey { return "\(base)/?s=\(key)" }
+        let base = "http://\(host):\(port)/?t=\(security.sessionToken)"
+        if let key = streamKey { return "\(base)&s=\(key)" }
         return base
     }
+
+    /// Same URL with the token redacted — safe to log or show in diagnostics.
+    func redactedReceiverURL(streamKey: String? = nil) -> String {
+        let host = HLSServer.localIPAddress() ?? "localhost"
+        let base = "http://\(host):\(port)/?t=…"
+        if let key = streamKey { return "\(base)&s=\(key)" }
+        return base
+    }
+
+    // MARK: Pairing controls (for the UI)
+
+    func beginPairing() -> String { security.beginPairing() }
+    func cancelPairing() { security.cancelPairing() }
+    func pairingSnapshot() -> SessionSecurity.PairingState { security.snapshot() }
 
     func start() {
         guard !isRunning else { return }
@@ -168,8 +185,7 @@ final class HLSServer {
             if let range = buf.range(of: Data("\r\n\r\n".utf8)) {
                 let headerData = buf.subdata(in: buf.startIndex..<range.lowerBound)
                 let header = String(decoding: headerData, as: UTF8.self)
-                let path = HLSServer.requestPath(header)
-                Task { @MainActor in self.route(path: path, conn: conn) }
+                Task { @MainActor in self.route(header: header, conn: conn) }
                 return
             }
             if error != nil || isComplete { conn.cancel(); return }
@@ -178,32 +194,89 @@ final class HLSServer {
         }
     }
 
-    private static func requestPath(_ header: String) -> String {
-        guard let firstLine = header.split(separator: "\r\n").first else { return "/" }
+    private static func requestLine(_ header: String) -> (method: String, path: String) {
+        guard let firstLine = header.split(separator: "\r\n").first else { return ("GET", "/") }
         let parts = firstLine.split(separator: " ")
-        guard parts.count >= 2 else { return "/" }
-        return String(parts[1])
+        guard parts.count >= 2 else { return ("GET", "/") }
+        return (String(parts[0]), String(parts[1]))
     }
 
-    private func route(path: String, conn: NWConnection) {
-        // Strip query for routing; the receiver page reads ?s= client-side.
-        let pathOnly = String(path.split(separator: "?").first ?? "/")
+    private static func headerValue(_ name: String, in header: String) -> String? {
+        let lower = name.lowercased() + ":"
+        for line in header.split(separator: "\r\n") {
+            if line.lowercased().hasPrefix(lower) {
+                return line.dropFirst(lower.count).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return nil
+    }
+
+    /// Allow requests addressed to an IP literal, localhost, or an mDNS `.local`
+    /// name (used by the Apple TV via Bonjour). A DNS-rebinding attack reaches us
+    /// through an attacker-controlled *public domain* Host — which is neither an IP
+    /// literal nor `.local` — so we reject those.
+    private static func isAllowedHost(_ hostHeader: String?) -> Bool {
+        guard let raw = hostHeader, !raw.isEmpty else { return false }
+        // Strip a trailing :port (we don't serve on bracketed IPv6 literals).
+        let host = (raw.split(separator: ":").first.map(String.init) ?? raw).lowercased()
+        if host == "localhost" { return true }
+        if host.hasSuffix(".local") { return true }
+        // IPv4 literal: 4 numeric octets.
+        let octets = host.split(separator: ".")
+        if octets.count == 4, octets.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }) {
+            return true
+        }
+        return false
+    }
+
+    private static func queryParam(_ name: String, in path: String) -> String? {
+        guard let q = path.split(separator: "?", maxSplits: 1).dropFirst().first else { return nil }
+        for pair in q.split(separator: "&") {
+            let kv = pair.split(separator: "=", maxSplits: 1)
+            if kv.first.map(String.init) == name {
+                let val = kv.count > 1 ? String(kv[1]) : ""
+                return val.removingPercentEncoding ?? val
+            }
+        }
+        return nil
+    }
+
+    private func route(header: String, conn: NWConnection) {
+        // Defense against DNS-rebinding: require an IP/localhost Host.
+        guard HLSServer.isAllowedHost(HLSServer.headerValue("Host", in: header)) else {
+            sendStatus(conn, 403); return
+        }
+
+        let (_, fullPath) = HLSServer.requestLine(header)
+        let pathOnly = String(fullPath.split(separator: "?").first ?? "/")
         let comps = pathOnly.split(separator: "/").map(String.init)
 
+        // Open endpoints (no screen data): the receiver shell and pairing.
         if pathOnly == "/" || pathOnly == "/index.html" || pathOnly == "/player" {
             send(conn, body: Data(WebReceiver.html.utf8), contentType: "text/html; charset=utf-8")
             return
         }
-        if pathOnly == "/streams.json" {
+        if pathOnly == "/pair" {
+            handlePair(fullPath: fullPath, conn: conn)
+            return
+        }
+
+        // Everything below is token-gated: /t/<token>/...
+        guard comps.count >= 2, comps[0] == "t", security.isValid(token: comps[1]) else {
+            sendStatus(conn, 403); return
+        }
+        let rest = Array(comps.dropFirst(2))   // components after /t/<token>
+
+        if rest == ["streams.json"] {
             let list = store.streamList().map { ["key": $0.key, "name": $0.name] }
             let data = (try? JSONSerialization.data(withJSONObject: list)) ?? Data("[]".utf8)
             send(conn, body: data, contentType: "application/json")
             return
         }
-        // /s/<key>/media.m3u8 | /s/<key>/init.mp4 | /s/<key>/seg/<n>.m4s
-        if comps.count >= 3, comps[0] == "s" {
-            let key = comps[1]
-            let tail = comps[2]
+        // s/<key>/media.m3u8 | s/<key>/init.mp4 | s/<key>/seg/<n>.m4s
+        if rest.count >= 3, rest[0] == "s" {
+            let key = rest[1]
+            let tail = rest[2]
             if tail == "media.m3u8" {
                 if let pl = store.mediaPlaylist(key: key) {
                     send(conn, body: Data(pl.utf8), contentType: "application/vnd.apple.mpegurl")
@@ -216,9 +289,8 @@ final class HLSServer {
                 } else { sendStatus(conn, 404) }
                 return
             }
-            if tail == "seg", comps.count >= 4 {
-                let name = comps[3]
-                let idxStr = name.replacingOccurrences(of: ".m4s", with: "")
+            if tail == "seg", rest.count >= 4 {
+                let idxStr = rest[3].replacingOccurrences(of: ".m4s", with: "")
                 if let idx = Int(idxStr), let d = store.segmentData(key: key, index: idx) {
                     send(conn, body: d, contentType: "video/iso.segment")
                 } else { sendStatus(conn, 404) }
@@ -228,13 +300,26 @@ final class HLSServer {
         sendStatus(conn, 404)
     }
 
+    /// POST/GET /pair?pin=NNNNNN — exchanges a valid PIN for the session token.
+    private func handlePair(fullPath: String, conn: NWConnection) {
+        guard let pin = HLSServer.queryParam("pin", in: fullPath),
+              let token = security.redeem(pin: pin) else {
+            sendStatus(conn, 403); return
+        }
+        let data = (try? JSONSerialization.data(withJSONObject: ["token": token])) ?? Data("{}".utf8)
+        send(conn, body: data, contentType: "application/json")
+    }
+
     // MARK: - HTTP responses
 
     private func send(_ conn: NWConnection, body: Data, contentType: String) {
+        // No CORS header: the bundled web receiver is same-origin, and a wildcard
+        // would let any website read the (unauthenticated-to-the-browser) screen
+        // stream cross-origin. X-Content-Type-Options hardens sniffing.
         var head = "HTTP/1.1 200 OK\r\n"
         head += "Content-Type: \(contentType)\r\n"
         head += "Content-Length: \(body.count)\r\n"
-        head += "Access-Control-Allow-Origin: *\r\n"
+        head += "X-Content-Type-Options: nosniff\r\n"
         head += "Cache-Control: no-cache\r\n"
         head += "Connection: close\r\n\r\n"
         var out = Data(head.utf8)

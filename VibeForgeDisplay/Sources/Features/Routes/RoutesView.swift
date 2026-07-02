@@ -9,6 +9,7 @@ struct RoutesView: View {
     let logService: LogService
 
     @State private var showCreateSheet = false
+    @State private var showPairSheet = false
 
     private var hasAnySource: Bool {
         !virtualDisplayService.configs.isEmpty || !surfaceService.configs.isEmpty
@@ -31,6 +32,9 @@ struct RoutesView: View {
                 surfaceService: surfaceService
             )
         }
+        .sheet(isPresented: $showPairSheet, onDismiss: { hlsServer.cancelPairing() }) {
+            PairingSheet(hlsServer: hlsServer)
+        }
     }
 
     private var header: some View {
@@ -44,6 +48,11 @@ struct RoutesView: View {
                     .foregroundStyle(VFTheme.Colors.textSecondary)
             }
             Spacer()
+            Button(action: startPairing) {
+                Label("Pair Apple TV", systemImage: "appletv")
+                    .font(VFTheme.Typography.caption)
+            }
+            .buttonStyle(.bordered)
             Button(action: { showCreateSheet = true }) {
                 Label("Add Route", systemImage: "plus")
                     .font(VFTheme.Typography.caption)
@@ -53,6 +62,12 @@ struct RoutesView: View {
             .disabled(!hasAnySource)
         }
         .padding(VFTheme.Spacing.xl)
+    }
+
+    private func startPairing() {
+        hlsServer.start()          // ensure the server is up so /pair is reachable
+        _ = hlsServer.beginPairing()
+        showPairSheet = true
     }
 
     private var infoBar: some View {
@@ -122,7 +137,7 @@ struct RoutesView: View {
             Label("How receivers connect", systemImage: "info.circle")
                 .font(VFTheme.Typography.headline)
                 .foregroundStyle(VFTheme.Colors.textSecondary)
-            Text("Phones, laptops, and smart TVs/sticks with a browser: open the link (or scan the QR). Apple TV has no browser — a native Apple TV receiver app is coming next. This is VibeForge's own stream, not Apple AirPlay.")
+            Text("Browser devices (phones, laptops, smart TVs/sticks): scan the QR or open the link — it carries a one-time access code. Apple TV: open VibeForge Receiver, pick this Mac, and enter the code from “Pair Apple TV”. Streams are gated by a per-session token and served only over your LAN — this is VibeForge's own stream, not Apple AirPlay.")
                 .font(VFTheme.Typography.caption)
                 .foregroundStyle(VFTheme.Colors.textTertiary)
         }
@@ -286,6 +301,73 @@ struct RouteRow: View {
         NSPasteboard.general.setString(receiverURL, forType: .string)
         copied = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
+    }
+}
+
+// MARK: - Pairing Sheet
+
+/// Shows the one-time PIN the user enters on the Apple TV to obtain the session
+/// token. Polls the server's pairing snapshot each second and auto-closes when
+/// the window expires or a receiver redeems the PIN.
+struct PairingSheet: View {
+    let hlsServer: HLSServer
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let state = hlsServer.pairingSnapshot()
+            content(state)
+                .onChange(of: state.active) { _, active in
+                    if !active { dismiss() }
+                }
+        }
+        .frame(width: 420)
+        .background(VFTheme.Colors.background)
+    }
+
+    @ViewBuilder
+    private func content(_ state: SessionSecurity.PairingState) -> some View {
+        VStack(alignment: .leading, spacing: VFTheme.Spacing.lg) {
+            Text("Pair an Apple TV")
+                .font(VFTheme.Typography.largeTitle)
+                .foregroundStyle(VFTheme.Colors.textPrimary)
+
+            Text("On the Apple TV, open VibeForge Receiver, choose this Mac, and enter this code:")
+                .font(VFTheme.Typography.body)
+                .foregroundStyle(VFTheme.Colors.textSecondary)
+
+            Text(formattedPIN(state.pin))
+                .font(.system(size: 48, weight: .semibold, design: .monospaced))
+                .foregroundStyle(VFTheme.Colors.accent)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, VFTheme.Spacing.md)
+
+            HStack {
+                Image(systemName: "clock")
+                Text("Expires in \(state.secondsLeft)s")
+            }
+            .font(VFTheme.Typography.caption)
+            .foregroundStyle(VFTheme.Colors.textTertiary)
+
+            Text("The code works once and only on this network. It grants access to your streams for this session.")
+                .font(VFTheme.Typography.caption)
+                .foregroundStyle(VFTheme.Colors.textTertiary)
+
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(VFTheme.Colors.accent)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(VFTheme.Spacing.xl)
+    }
+
+    private func formattedPIN(_ pin: String?) -> String {
+        guard let pin, pin.count == 6 else { return "— — —" }
+        let mid = pin.index(pin.startIndex, offsetBy: 3)
+        return "\(pin[pin.startIndex..<mid]) \(pin[mid...])"
     }
 }
 

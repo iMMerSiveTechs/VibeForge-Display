@@ -213,6 +213,18 @@ The tvOS receiver is a second target in the same project.
 
 > Requires the Mac and Apple TV on the same Wi-Fi/LAN. The receiver talks plain HTTP on the local network (allowed via `NSAllowsLocalNetworking`).
 
+### Security model
+
+Streams carry screen contents, so access is gated:
+
+- **Per-session token** — on launch the Mac generates a high-entropy token (CSPRNG). *Every* data endpoint (`/t/<token>/streams.json`, `/t/<token>/s/<key>/…`) requires it; without it the server returns 403. The receiver shell page and the pairing endpoint are the only open paths, and neither exposes screen data.
+- **Browser receivers** get the token embedded in the QR/link — nothing to type.
+- **Apple TV** pairs with a **6-digit PIN** shown on the Mac (Routes → “Pair Apple TV”). The PIN is one-time-use, expires after 2 minutes, and locks out after 5 wrong attempts; a correct PIN is exchanged for the session token, which the receiver stores until the Mac restarts.
+- **No wildcard CORS**, and the server rejects requests whose `Host` isn’t an IP/localhost/`.local` — blocking DNS-rebinding attempts from a malicious website.
+- Stream keys are CSPRNG identifiers (not the credential); the token in URLs is redacted from logs.
+
+Limitation: transport is plain HTTP on the LAN (required for `.local`/AVPlayer). Anyone you show the QR/PIN to can view that session’s streams. Don’t run Routes on a network where that matters without treating the QR/PIN as a password.
+
 ---
 
 ## Roadmap

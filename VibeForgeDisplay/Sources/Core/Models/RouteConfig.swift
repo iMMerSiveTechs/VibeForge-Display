@@ -44,16 +44,11 @@ struct RouteConfig: Identifiable, Codable, Sendable {
         self.createdAt = Date()
     }
 
-    /// Short random key so stream URLs are stable and collision-free.
+    /// Stable, unguessable stream key from a CSPRNG (~62 bits).
+    /// Note: the stream key is an identifier, NOT the access-control credential —
+    /// the server gates all data endpoints behind the session token (SessionSecurity).
     private static func makeStreamKey() -> String {
-        let chars = Array("abcdefghijklmnopqrstuvwxyz0123456789")
-        var key = ""
-        var seed = UUID().uuidString.unicodeScalars.reduce(0) { $0 &+ Int($1.value) }
-        for _ in 0..<8 {
-            seed = (seed &* 1103515245 &+ 12345) & 0x7fffffff
-            key.append(chars[seed % chars.count])
-        }
-        return key
+        SecureRandom.token(byteCount: 12)
     }
 }
 

@@ -24,6 +24,13 @@ enum VFConstants {
         static let segmentWindow = 8
     }
 
+    enum Security {
+        /// Seconds a pairing PIN stays valid after the user opens pairing on the Mac.
+        static let pairingWindow: TimeInterval = 120
+        /// Wrong-PIN attempts allowed before pairing auto-closes and must be re-armed.
+        static let maxPairingAttempts = 5
+    }
+
     static var appSupportURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")

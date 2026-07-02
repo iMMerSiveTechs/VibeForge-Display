@@ -7,24 +7,56 @@ struct StreamInfo: Identifiable, Hashable {
     var id: String { key }
 }
 
-/// Fetches the list of live streams and builds playback URLs from the Mac's HTTP server.
+/// Talks to the Mac's token-gated HTTP server: pairs with a PIN to obtain the
+/// session token, then lists streams and builds playback URLs under /t/<token>/.
 enum StreamsClient {
-    static func fetch(host: String, port: Int) async -> [StreamInfo] {
-        guard let url = URL(string: "http://\(host):\(port)/streams.json") else { return [] }
+    enum FetchResult { case ok([StreamInfo]); case unauthorized; case failed }
+
+    /// Exchanges a 6-digit PIN (shown on the Mac) for the session token.
+    static func pair(host: String, port: Int, pin: String) async -> String? {
+        let digits = pin.filter { $0.isNumber }
+        guard let url = URL(string: "http://\(host):\(port)/pair?pin=\(digits)") else { return nil }
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            let arr = (try? JSONSerialization.jsonObject(with: data)) as? [[String: String]] ?? []
-            return arr.compactMap { dict in
-                guard let key = dict["key"] else { return nil }
-                return StreamInfo(key: key, name: dict["name"] ?? key)
-            }
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: String]
+            return obj?["token"]
         } catch {
-            return []
+            return nil
         }
     }
 
-    static func mediaURL(host: String, port: Int, key: String) -> URL? {
-        URL(string: "http://\(host):\(port)/s/\(key)/media.m3u8")
+    static func fetch(host: String, port: Int, token: String) async -> FetchResult {
+        guard let url = URL(string: "http://\(host):\(port)/t/\(token)/streams.json") else { return .failed }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if code == 403 { return .unauthorized }
+            guard code == 200 else { return .failed }
+            let arr = (try? JSONSerialization.jsonObject(with: data)) as? [[String: String]] ?? []
+            let streams = arr.compactMap { dict -> StreamInfo? in
+                guard let key = dict["key"] else { return nil }
+                return StreamInfo(key: key, name: dict["name"] ?? key)
+            }
+            return .ok(streams)
+        } catch {
+            return .failed
+        }
+    }
+
+    static func mediaURL(host: String, port: Int, token: String, key: String) -> URL? {
+        URL(string: "http://\(host):\(port)/t/\(token)/s/\(key)/media.m3u8")
+    }
+
+    /// Persisted per-host session token (so the user doesn't re-enter the PIN each launch).
+    static func storedToken(host: String) -> String? {
+        UserDefaults.standard.string(forKey: "vf.token.\(host)")
+    }
+    static func storeToken(_ token: String, host: String) {
+        UserDefaults.standard.set(token, forKey: "vf.token.\(host)")
+    }
+    static func clearToken(host: String) {
+        UserDefaults.standard.removeObject(forKey: "vf.token.\(host)")
     }
 }
 
