@@ -4,6 +4,7 @@ import AVFoundation
 import CoreMedia
 import CoreVideo
 import CoreGraphics
+import QuartzCore
 import ScreenCaptureKit
 import UniformTypeIdentifiers
 
@@ -24,6 +25,10 @@ enum StreamSource: Sendable {
 final class StreamService {
     private(set) var routes: [RouteConfig] = []
     private(set) var streamingRouteIDs: Set<UUID> = []
+    private(set) var startingRouteIDs: Set<UUID> = []
+    /// Last user-facing error per route (permission denied, capture failed, …),
+    /// surfaced in the Routes UI. Cleared when a start succeeds.
+    private(set) var lastError: [UUID: String] = [:]
 
     private var sessions: [UUID: StreamSession] = [:]
     private let persistence: PersistenceManager
@@ -70,6 +75,8 @@ final class StreamService {
     }
 
     func isStreaming(_ id: UUID) -> Bool { streamingRouteIDs.contains(id) }
+    func isStarting(_ id: UUID) -> Bool { startingRouteIDs.contains(id) }
+    func error(for id: UUID) -> String? { lastError[id] }
 
     struct RouteStats {
         let frames: Int
@@ -92,7 +99,11 @@ final class StreamService {
 
     func startRoute(_ id: UUID) async {
         guard let route = routes.first(where: { $0.id == id }) else { return }
-        guard !streamingRouteIDs.contains(id) else { return }
+        // Re-entrancy guard: ignore if already streaming or a start is in flight.
+        guard !streamingRouteIDs.contains(id), !startingRouteIDs.contains(id) else { return }
+        startingRouteIDs.insert(id)
+        lastError[id] = nil
+        defer { startingRouteIDs.remove(id) }
 
         // Resolve the capture source and its dimensions per source kind.
         let source: StreamSource
@@ -102,14 +113,14 @@ final class StreamService {
         switch route.sourceKind {
         case .virtualScreen:
             guard let vs = virtualDisplayService.configs.first(where: { $0.id == route.sourceID }) else {
-                logService.log(.error, "Route source missing", detail: "No virtual screen for \(route.name)")
+                fail(id, "This route's virtual screen no longer exists. Recreate it or delete the route.")
                 return
             }
             if !virtualDisplayService.isActive(vs.id) {
                 await virtualDisplayService.createDisplay(config: vs)
             }
             guard let displayID = virtualDisplayService.displayID(for: vs.id) else {
-                logService.log(.error, "Could not activate source display", detail: route.name)
+                fail(id, "Couldn't activate the virtual screen “\(vs.name)”.")
                 return
             }
             source = .display(displayID)
@@ -118,11 +129,11 @@ final class StreamService {
 
         case .surface:
             guard let sc = surfaceService.configs.first(where: { $0.id == route.sourceID }) else {
-                logService.log(.error, "Route source missing", detail: "No surface for \(route.name)")
+                fail(id, "This route's Surface no longer exists. Recreate it or delete the route.")
                 return
             }
             guard let windowID = surfaceService.ensureWindowID(for: sc.id) else {
-                logService.log(.error, "Could not open source surface window", detail: route.name)
+                fail(id, "Couldn't open the Surface window for “\(sc.name)”.")
                 return
             }
             source = .window(windowID)
@@ -130,7 +141,12 @@ final class StreamService {
             height = max(2, Int(sc.frameHeight))
         }
 
-        hlsServer.start()
+        // Ensure the LAN server is actually listening before we claim "Live".
+        let serverUp = await hlsServer.startAndWait()
+        guard serverUp else {
+            fail(id, "The stream server couldn't start (port \(hlsServer.port) may be in use).")
+            return
+        }
         hlsServer.store.register(key: route.streamKey, name: route.name)
 
         let session = StreamSession(
@@ -141,22 +157,49 @@ final class StreamService {
             store: hlsServer.store,
             logService: logService
         )
+        // Clean up if capture dies later (source destroyed, permission revoked, …).
+        session.onStopped = { [weak self] message in
+            Task { @MainActor in self?.handleSessionStopped(id, error: message) }
+        }
         do {
             try await session.start()
+            // If the user stopped/removed the route while we were awaiting, abort.
+            guard startingRouteIDs.contains(id), routes.contains(where: { $0.id == id }) else {
+                session.stop()
+                hlsServer.store.unregister(key: route.streamKey)
+                return
+            }
             sessions[id] = session
             streamingRouteIDs.insert(id)
             logService.log(.system, "Streaming started: \(route.name)",
                            detail: hlsServer.redactedReceiverURL(streamKey: route.streamKey))
         } catch {
             hlsServer.store.unregister(key: route.streamKey)
-            logService.log(.error, "Failed to start stream: \(route.name)",
-                           detail: error.localizedDescription)
+            fail(id, friendlyStartError(error))
         }
     }
 
+    private func fail(_ id: UUID, _ message: String) {
+        lastError[id] = message
+        logService.log(.error, "Route start failed", detail: message)
+    }
+
+    /// Turns capture errors into user-actionable text. Screen Recording denial is
+    /// the common first-run failure (SCShareableContent throws), so lead with it.
+    private func friendlyStartError(_ error: Error) -> String {
+        "Couldn't start capture — if this is the first time, grant Screen Recording "
+        + "in System Settings → Privacy & Security and relaunch VibeForge. (\(error.localizedDescription))"
+    }
+
     func stopRoute(_ id: UUID) {
-        guard let session = sessions[id] else { return }
+        // Cancel an in-flight start (startRoute re-checks startingRouteIDs after its awaits).
+        let wasStarting = startingRouteIDs.remove(id) != nil
+        guard let session = sessions[id] else {
+            if wasStarting { logService.log(.system, "Cancelled starting route") }
+            return
+        }
         let route = routes.first(where: { $0.id == id })
+        session.onStopped = nil          // we're stopping deliberately; no failure callback
         session.stop()
         sessions.removeValue(forKey: id)
         streamingRouteIDs.remove(id)
@@ -166,6 +209,27 @@ final class StreamService {
 
     func stopAll() {
         for id in Array(streamingRouteIDs) { stopRoute(id) }
+        for id in Array(startingRouteIDs) { startingRouteIDs.remove(id) }
+    }
+
+    /// Stops any live/starting route whose source is `sourceID` — call before
+    /// deleting or deactivating a virtual screen or Surface.
+    func stopRoutesUsing(sourceID: UUID) {
+        for route in routes where route.sourceID == sourceID {
+            if streamingRouteIDs.contains(route.id) || startingRouteIDs.contains(route.id) {
+                stopRoute(route.id)
+            }
+        }
+    }
+
+    /// Invoked when a session's capture dies on its own (SCStream didStopWithError).
+    private func handleSessionStopped(_ id: UUID, error: String?) {
+        guard sessions[id] != nil else { return }
+        let route = routes.first(where: { $0.id == id })
+        sessions.removeValue(forKey: id)
+        streamingRouteIDs.remove(id)
+        if let key = route?.streamKey { hlsServer.store.unregister(key: key) }
+        lastError[id] = error.map { "Streaming stopped: \($0)" } ?? "Streaming stopped unexpectedly."
     }
 
     /// Starts routes flagged auto-start shortly after launch. Respects the
@@ -223,11 +287,29 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
     private let store: HLSSegmentStore
     private let logService: LogService
 
+    /// Called (once) if the capture stops on its own — e.g. the source display is
+    /// destroyed, the Surface window closes, or Screen Recording is revoked. Nil'd
+    /// out on a deliberate stop() so we don't report a user-initiated stop as failure.
+    var onStopped: (@Sendable (String?) -> Void)?
+
     private var stream: SCStream?
     private var writer: AVAssetWriter?
     private var videoInput: AVAssetWriterInput?
     private var sessionStarted = false
+    private var isStopping = false
     private let sampleQueue = DispatchQueue(label: "vibeforge.stream.samples")
+
+    // Zero-based encode timeline (so init/segment times are consistent) plus a
+    // keep-alive that re-emits the last frame on a static screen — otherwise
+    // ScreenCaptureKit stops delivering frames and the HLS playlist freezes.
+    private var baselineHost: CFTimeInterval?
+    private var lastAdjustedPTS: CMTime = .zero
+    private var lastSample: CMSampleBuffer?
+    private var lastRealFrameHost: CFTimeInterval = 0
+    private var keepAliveTimer: DispatchSourceTimer?
+    private var frameInterval: CMTime {
+        CMTime(value: 1, timescale: CMTimeScale(max(1, route.quality.frameRate)))
+    }
 
     // Lightweight live telemetry (read from the UI on the main thread).
     let startedAt = Date()
@@ -327,23 +409,72 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
                 of type: SCStreamOutputType) {
-        guard type == .screen, sampleBuffer.isValid else { return }
+        // All access below is on sampleQueue (the sample handler queue) plus the
+        // keep-alive timer, which also runs on sampleQueue — so no locking needed.
+        guard !isStopping, type == .screen, sampleBuffer.isValid else { return }
         guard StreamSession.isComplete(sampleBuffer) else { return }
         guard let writer, let input = videoInput, writer.status == .writing else { return }
 
-        if !sessionStarted {
-            writer.startSession(atSourceTime: sampleBuffer.presentationTimeStamp)
+        let now = CACurrentMediaTime()
+        if baselineHost == nil {
+            baselineHost = now
+            writer.startSession(atSourceTime: .zero)
             sessionStarted = true
         }
-        if input.isReadyForMoreMediaData {
-            input.append(sampleBuffer)
-            statsLock.lock(); _framesEncoded += 1; statsLock.unlock()
+        appendRetimed(sampleBuffer, at: now, input: input)
+        lastSample = sampleBuffer
+        lastRealFrameHost = now
+        startKeepAliveIfNeeded()
+    }
+
+    /// Appends a copy of `sample` timestamped to real elapsed time since the first
+    /// frame — so media-time tracks wall-clock and segments cut at ~1s regardless
+    /// of the source frame cadence (including synthesized keep-alive frames).
+    private func appendRetimed(_ sample: CMSampleBuffer, at host: CFTimeInterval, input: AVAssetWriterInput) {
+        guard input.isReadyForMoreMediaData, let baselineHost else { return }
+        let elapsed = max(0, host - baselineHost)
+        var pts = CMTime(seconds: elapsed, preferredTimescale: 600)
+        if CMTimeCompare(pts, lastAdjustedPTS) <= 0 {           // strictly increasing
+            pts = CMTimeAdd(lastAdjustedPTS, frameInterval)
         }
+        var timing = CMSampleTimingInfo(duration: frameInterval,
+                                        presentationTimeStamp: pts,
+                                        decodeTimeStamp: .invalid)
+        var copy: CMSampleBuffer?
+        let status = CMSampleBufferCreateCopyWithNewTiming(
+            allocator: kCFAllocatorDefault, sampleBuffer: sample,
+            sampleTimingEntryCount: 1, sampleTimingArray: &timing, sampleBufferOut: &copy)
+        guard status == noErr, let out = copy else { return }
+        input.append(out)
+        lastAdjustedPTS = pts
+        statsLock.lock(); _framesEncoded += 1; statsLock.unlock()
+    }
+
+    private func startKeepAliveIfNeeded() {
+        guard keepAliveTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: sampleQueue)
+        timer.schedule(deadline: .now() + 0.5, repeating: 0.5)
+        timer.setEventHandler { [weak self] in self?.keepAliveTick() }
+        keepAliveTimer = timer
+        timer.resume()
+    }
+
+    /// If no real frame arrived recently (static screen), re-emit the last one at
+    /// the current wall-clock time so AVAssetWriter keeps cutting segments.
+    private func keepAliveTick() {
+        guard !isStopping, sessionStarted,
+              let input = videoInput, let last = lastSample else { return }
+        let now = CACurrentMediaTime()
+        if now - lastRealFrameHost < 0.9 { return }
+        appendRetimed(last, at: now, input: input)
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
+        let message = error.localizedDescription
+        onStopped?(message)
+        onStopped = nil
         Task { @MainActor in
-            logService.log(.error, "Capture stopped: \(route.name)", detail: error.localizedDescription)
+            self.logService.log(.error, "Capture stopped: \(self.route.name)", detail: message)
         }
     }
 
@@ -376,11 +507,21 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
     // MARK: Teardown
 
     func stop() {
+        onStopped = nil
         stream?.stopCapture { _ in }
         stream = nil
-        videoInput?.markAsFinished()
-        writer?.finishWriting { }
-        writer = nil
-        videoInput = nil
+        // Finalize the writer on sampleQueue so it can't race an in-flight append
+        // (append-after-markAsFinished throws NSInternalInconsistencyException).
+        sampleQueue.async { [weak self] in
+            guard let self else { return }
+            self.isStopping = true
+            self.keepAliveTimer?.cancel()
+            self.keepAliveTimer = nil
+            self.videoInput?.markAsFinished()
+            self.writer?.finishWriting { }
+            self.writer = nil
+            self.videoInput = nil
+            self.lastSample = nil
+        }
     }
 }

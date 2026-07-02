@@ -129,12 +129,19 @@ final class HLSServer {
     func cancelPairing() { security.cancelPairing() }
     func pairingSnapshot() -> SessionSecurity.PairingState { security.snapshot() }
 
+    private var readinessWaiters: [CheckedContinuation<Bool, Never>] = []
+
     func start() {
-        guard !isRunning else { return }
+        // Guard on the listener existing, not on isRunning (which only flips to
+        // true asynchronously in .ready) — otherwise two rapid start() calls
+        // create two NWListeners and leak/split the bind.
+        guard listener == nil else { return }
         do {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
-            guard let nwPort = NWEndpoint.Port(rawValue: port) else { return }
+            guard let nwPort = NWEndpoint.Port(rawValue: port) else {
+                resolveReadiness(false); return
+            }
             let listener = try NWListener(using: params, on: nwPort)
             listener.service = NWListener.Service(
                 name: VFConstants.appName,
@@ -145,14 +152,18 @@ final class HLSServer {
             }
             listener.stateUpdateHandler = { [weak self] state in
                 Task { @MainActor in
+                    guard let self else { return }
                     switch state {
                     case .ready:
-                        self?.isRunning = true
-                        self?.logService.log(.system, "Stream server started",
-                                             detail: "port \(self?.port ?? 0)")
+                        self.isRunning = true
+                        self.logService.log(.system, "Stream server started", detail: "port \(self.port)")
+                        self.resolveReadiness(true)
                     case .failed(let err):
-                        self?.isRunning = false
-                        self?.logService.log(.error, "Stream server failed", detail: "\(err)")
+                        self.isRunning = false
+                        self.listener?.cancel()
+                        self.listener = nil
+                        self.logService.log(.error, "Stream server failed", detail: "\(err)")
+                        self.resolveReadiness(false)
                     default: break
                     }
                 }
@@ -160,14 +171,33 @@ final class HLSServer {
             listener.start(queue: queue)
             self.listener = listener
         } catch {
+            listener = nil
             logService.log(.error, "Could not start stream server", detail: error.localizedDescription)
+            resolveReadiness(false)
         }
+    }
+
+    /// Starts the server if needed and resolves once it's actually listening
+    /// (.ready) or has failed to bind. Returns whether it is serving.
+    func startAndWait() async -> Bool {
+        if isRunning { return true }
+        return await withCheckedContinuation { continuation in
+            readinessWaiters.append(continuation)
+            start()
+        }
+    }
+
+    private func resolveReadiness(_ success: Bool) {
+        let waiters = readinessWaiters
+        readinessWaiters.removeAll()
+        for w in waiters { w.resume(returning: success) }
     }
 
     func stop() {
         listener?.cancel()
         listener = nil
         isRunning = false
+        resolveReadiness(false)
         logService.log(.system, "Stream server stopped")
     }
 
