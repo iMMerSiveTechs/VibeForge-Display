@@ -3,6 +3,7 @@ import SwiftUI
 
 final class SurfaceWindow: NSPanel {
 
+    @MainActor
     static func create(config: SurfaceConfig, service: SurfaceService) -> SurfaceWindow {
         let frame = NSRect(
             x: config.frameX,

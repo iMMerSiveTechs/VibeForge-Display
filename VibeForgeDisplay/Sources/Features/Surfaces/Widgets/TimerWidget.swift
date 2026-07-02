@@ -9,7 +9,9 @@ struct TimerWidget: View {
     @State private var elapsedSeconds: Int = 0
     @State private var isRunning = false
     @State private var isCountingUp = false
-    @State private var timer: Timer?
+    // SwiftUI timer publisher: fires on the main run loop, so the sink closure is
+    // main-actor (not @Sendable) and captures no non-Sendable self — Swift 6 clean.
+    @State private var ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var displayTime: String {
         let total = isCountingUp ? elapsedSeconds : max(targetSeconds - elapsedSeconds, 0)
@@ -62,13 +64,11 @@ struct TimerWidget: View {
             RoundedRectangle(cornerRadius: VFTheme.Radius.md)
                 .stroke(VFTheme.Colors.border, lineWidth: 1)
         )
+        .onReceive(ticker) { _ in tick() }
         .onAppear {
             let data = service.timerData(for: surfaceID, widgetID: widgetID)
             targetSeconds = data.targetSeconds
             isCountingUp = data.isCountingUp
-        }
-        .onDisappear {
-            timer?.invalidate()
         }
     }
 
@@ -91,7 +91,7 @@ struct TimerWidget: View {
 
     private var controlButtons: some View {
         HStack(spacing: VFTheme.Spacing.sm) {
-            Button(action: toggleTimer) {
+            Button(action: { isRunning.toggle() }) {
                 Image(systemName: isRunning ? "pause.fill" : "play.fill")
                     .foregroundStyle(VFTheme.Colors.accent)
             }
@@ -105,31 +105,20 @@ struct TimerWidget: View {
         }
     }
 
-    private func toggleTimer() {
-        if isRunning {
-            timer?.invalidate()
-            timer = nil
-            isRunning = false
+    /// Advances the timer once per second while running.
+    private func tick() {
+        guard isRunning else { return }
+        if isCountingUp {
+            elapsedSeconds += 1
+        } else if elapsedSeconds < targetSeconds {
+            elapsedSeconds += 1
+            if elapsedSeconds >= targetSeconds { isRunning = false }
         } else {
-            isRunning = true
-            timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-                Task { @MainActor in
-                    if isCountingUp {
-                        elapsedSeconds += 1
-                    } else if elapsedSeconds < targetSeconds {
-                        elapsedSeconds += 1
-                    } else {
-                        timer?.invalidate()
-                        isRunning = false
-                    }
-                }
-            }
+            isRunning = false
         }
     }
 
     private func reset() {
-        timer?.invalidate()
-        timer = nil
         isRunning = false
         elapsedSeconds = 0
     }

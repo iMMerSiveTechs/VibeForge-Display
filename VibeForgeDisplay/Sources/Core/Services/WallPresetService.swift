@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// Saves and restores whole multi-TV layouts (Wall Presets). A preset snapshots
 /// the current virtual screens + routes; applying it re-materializes them.

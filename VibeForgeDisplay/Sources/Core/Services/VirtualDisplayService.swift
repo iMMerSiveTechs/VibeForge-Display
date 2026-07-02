@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import Observation
 
 // CGVirtualDisplay extensions for Sendable compliance
 // These ObjC classes come from our bridging header, not a separate module
