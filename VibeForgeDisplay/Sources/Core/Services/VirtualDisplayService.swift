@@ -265,7 +265,9 @@ final class VirtualDisplayService {
     private func withTimeout(seconds: Double, operation: @escaping @Sendable () -> Bool) async -> Bool {
         await withCheckedContinuation { continuation in
             let lock = NSLock()
-            var didResume = false
+            // Guarded by `lock`; the compiler's syntactic @Sendable-capture rule
+            // needs the explicit unsafe opt-out.
+            nonisolated(unsafe) var didResume = false
 
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = operation()

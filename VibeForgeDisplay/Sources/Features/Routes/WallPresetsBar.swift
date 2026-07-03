@@ -49,9 +49,9 @@ struct WallPresetsBar: View {
             Button("OK") { wallPresetService.clearApplyReport() }
         } message: {
             if let r = wallPresetService.lastApplyReport {
-                var lines = ["Restored \(r.screensRestored) screen(s), \(r.surfacesRestored) surface(s), \(r.routesRestored) route(s); started \(r.routesStarted)."]
-                if !r.failures.isEmpty { lines.append("\nIssues:\n" + r.failures.joined(separator: "\n")) }
-                Text(lines.joined(separator: "\n"))
+                let base = "Restored \(r.screensRestored) screen(s), \(r.surfacesRestored) surface(s), \(r.routesRestored) route(s); started \(r.routesStarted)."
+                let issues = r.failures.isEmpty ? "" : "\n\nIssues:\n" + r.failures.joined(separator: "\n")
+                Text(base + issues)
             }
         }
     }
