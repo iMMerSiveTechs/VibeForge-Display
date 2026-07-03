@@ -48,15 +48,16 @@ enum StreamsClient {
         URL(string: "http://\(host):\(port)/t/\(token)/s/\(key)/media.m3u8")
     }
 
-    /// Persisted per-host session token (so the user doesn't re-enter the PIN each launch).
+    /// Per-host session token, stored in the Keychain (an access credential), so
+    /// the user doesn't re-enter the PIN each launch.
     static func storedToken(host: String) -> String? {
-        UserDefaults.standard.string(forKey: "vf.token.\(host)")
+        Keychain.get("token.\(host)")
     }
     static func storeToken(_ token: String, host: String) {
-        UserDefaults.standard.set(token, forKey: "vf.token.\(host)")
+        Keychain.set(token, for: "token.\(host)")
     }
     static func clearToken(host: String) {
-        UserDefaults.standard.removeObject(forKey: "vf.token.\(host)")
+        Keychain.delete("token.\(host)")
     }
 }
 
