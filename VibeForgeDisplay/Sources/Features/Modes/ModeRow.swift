@@ -6,6 +6,7 @@ struct ModeRow: View {
     let onDelete: () -> Void
 
     @State private var isHovering = false
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         HStack(spacing: VFTheme.Spacing.md) {
@@ -43,19 +44,22 @@ struct ModeRow: View {
 
             Spacer()
 
-            if isHovering {
-                HStack(spacing: VFTheme.Spacing.sm) {
-                    Button("Check", action: onRestore)
-                        .buttonStyle(.borderedProminent)
-                        .tint(VFTheme.Colors.accent)
-                        .controlSize(.small)
-
-                    Button(action: onDelete) {
-                        Image(systemName: "trash")
-                            .foregroundStyle(VFTheme.Colors.error)
-                    }
-                    .buttonStyle(.bordered)
+            HStack(spacing: VFTheme.Spacing.sm) {
+                Button("Check", action: onRestore)
+                    .buttonStyle(.borderedProminent)
+                    .tint(VFTheme.Colors.accent)
                     .controlSize(.small)
+
+                Button(action: { showDeleteConfirm = true }) {
+                    Image(systemName: "trash")
+                        .foregroundStyle(VFTheme.Colors.error)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("Delete mode \(mode.name)")
+                .confirmationDialog("Delete mode “\(mode.name)”?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+                    Button("Delete", role: .destructive, action: onDelete)
+                    Button("Cancel", role: .cancel) { }
                 }
             }
         }

@@ -5,6 +5,7 @@ struct VirtualDisplaysView: View {
     let logService: LogService
 
     @State private var showCreateSheet = false
+    @State private var editingConfig: VirtualScreenConfig?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -18,6 +19,9 @@ struct VirtualDisplaysView: View {
         .background(VFTheme.Colors.background)
         .sheet(isPresented: $showCreateSheet) {
             CreateVirtualDisplaySheet(virtualDisplayService: virtualDisplayService)
+        }
+        .sheet(item: $editingConfig) { config in
+            EditVirtualScreenSheet(config: config, virtualDisplayService: virtualDisplayService)
         }
     }
 
@@ -95,6 +99,7 @@ struct VirtualDisplaysView: View {
                             isActive: virtualDisplayService.isActive(config.id),
                             displayID: virtualDisplayService.displayID(for: config.id),
                             onToggle: { toggleDisplay(config) },
+                            onEdit: { editingConfig = config },
                             onDelete: { virtualDisplayService.removeConfig(config.id) }
                         )
                     }
@@ -122,9 +127,10 @@ struct VirtualDisplayCard: View {
     let isActive: Bool
     let displayID: CGDirectDisplayID?
     let onToggle: () -> Void
+    let onEdit: () -> Void
     let onDelete: () -> Void
 
-    @State private var isHovering = false
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: VFTheme.Spacing.md) {
@@ -139,7 +145,10 @@ struct VirtualDisplayCard: View {
             RoundedRectangle(cornerRadius: VFTheme.Radius.lg)
                 .stroke(isActive ? VFTheme.Colors.success.opacity(0.5) : VFTheme.Colors.border, lineWidth: 1)
         )
-        .onHover { isHovering = $0 }
+        .confirmationDialog("Delete virtual screen “\(config.name)”?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Delete", role: .destructive, action: onDelete)
+            Button("Cancel", role: .cancel) { }
+        }
     }
 
     private var cardHeader: some View {
@@ -185,14 +194,21 @@ struct VirtualDisplayCard: View {
                 .tint(isActive ? VFTheme.Colors.warning : VFTheme.Colors.accent)
                 .controlSize(.small)
 
-                if isHovering {
-                    Button(action: onDelete) {
-                        Image(systemName: "trash")
-                            .foregroundStyle(VFTheme.Colors.error)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                Button(action: onEdit) {
+                    Image(systemName: "pencil").foregroundStyle(VFTheme.Colors.textSecondary)
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isActive)
+                .accessibilityLabel("Edit \(config.name)")
+                .help("Edit name and auto-start (resolution changes need recreating the screen)")
+
+                Button(action: { showDeleteConfirm = true }) {
+                    Image(systemName: "trash").foregroundStyle(VFTheme.Colors.error)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("Delete \(config.name)")
             }
         }
     }
@@ -223,5 +239,61 @@ struct VirtualDisplayCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+}
+
+// MARK: - Edit Virtual Screen Sheet
+
+struct EditVirtualScreenSheet: View {
+    let config: VirtualScreenConfig
+    let virtualDisplayService: VirtualDisplayService
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String
+    @State private var autoCreate: Bool
+
+    init(config: VirtualScreenConfig, virtualDisplayService: VirtualDisplayService) {
+        self.config = config
+        self.virtualDisplayService = virtualDisplayService
+        _name = State(initialValue: config.name)
+        _autoCreate = State(initialValue: config.autoCreateOnLaunch)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: VFTheme.Spacing.xl) {
+            Text("Edit Virtual Screen")
+                .font(VFTheme.Typography.largeTitle)
+                .foregroundStyle(VFTheme.Colors.textPrimary)
+
+            VStack(alignment: .leading, spacing: VFTheme.Spacing.sm) {
+                Text("Name").font(VFTheme.Typography.headline).foregroundStyle(VFTheme.Colors.textSecondary)
+                TextField("Display name", text: $name).textFieldStyle(.roundedBorder)
+            }
+            Toggle("Create automatically on launch", isOn: $autoCreate)
+                .font(VFTheme.Typography.body)
+                .foregroundStyle(VFTheme.Colors.textPrimary)
+            Text("To change resolution or refresh rate, delete this screen and add a new one.")
+                .font(VFTheme.Typography.caption)
+                .foregroundStyle(VFTheme.Colors.textTertiary)
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.buttonStyle(.bordered).keyboardShortcut(.cancelAction)
+                Button("Save") { save() }
+                    .buttonStyle(.borderedProminent).tint(VFTheme.Colors.accent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(VFTheme.Spacing.xl)
+        .frame(width: 440)
+        .background(VFTheme.Colors.background)
+    }
+
+    private func save() {
+        var updated = config
+        updated.name = name.trimmingCharacters(in: .whitespaces)
+        updated.autoCreateOnLaunch = autoCreate
+        virtualDisplayService.updateConfig(updated)
+        dismiss()
     }
 }

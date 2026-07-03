@@ -12,6 +12,7 @@ struct RoutesView: View {
 
     @State private var showCreateSheet = false
     @State private var showPairSheet = false
+    @State private var editingRoute: RouteConfig?
     @State private var screenRecordingOK = CGPreflightScreenCaptureAccess()
 
     private var hasAnySource: Bool {
@@ -44,6 +45,9 @@ struct RoutesView: View {
             // live while they walk to the TV and type it. The 120s window and
             // one-time use are enforced in SessionSecurity.
             PairingSheet(hlsServer: hlsServer)
+        }
+        .sheet(item: $editingRoute) { route in
+            EditRouteSheet(route: route, streamService: streamService)
         }
     }
 
@@ -161,6 +165,7 @@ struct RoutesView: View {
                             hasLANAddress: HLSServer.localIPAddress() != nil,
                             statsProvider: { streamService.stats(for: route.id) },
                             onToggle: { toggle(route) },
+                            onEdit: { editingRoute = route },
                             onDelete: { streamService.removeRoute(route.id) }
                         )
                     }
@@ -227,6 +232,7 @@ struct RouteRow: View {
     let hasLANAddress: Bool
     let statsProvider: () -> StreamService.RouteStats?
     let onToggle: () -> Void
+    let onEdit: () -> Void
     let onDelete: () -> Void
 
     @State private var copied = false
@@ -309,6 +315,15 @@ struct RouteRow: View {
                 .controlSize(.small)
                 .disabled(isStarting || (sourceMissing && !isStreaming))
                 .help(sourceMissing ? "The source for this route is missing." : "")
+
+                Button(action: onEdit) {
+                    Image(systemName: "pencil").foregroundStyle(VFTheme.Colors.textSecondary)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("Edit route \(route.name)")
+                .disabled(isStreaming)
+                .help("Edit name, quality, and auto-start")
 
                 Button(action: { showDeleteConfirm = true }) {
                     Image(systemName: "trash").foregroundStyle(VFTheme.Colors.error)
@@ -483,6 +498,72 @@ struct PairingSheet: View {
         guard let pin, pin.count == 6 else { return "–––  –––" }
         let mid = pin.index(pin.startIndex, offsetBy: 3)
         return "\(pin[pin.startIndex..<mid])  \(pin[mid...])"
+    }
+}
+
+// MARK: - Edit Route Sheet
+
+struct EditRouteSheet: View {
+    let route: RouteConfig
+    let streamService: StreamService
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String
+    @State private var quality: StreamQuality
+    @State private var autoStart: Bool
+
+    init(route: RouteConfig, streamService: StreamService) {
+        self.route = route
+        self.streamService = streamService
+        _name = State(initialValue: route.name)
+        _quality = State(initialValue: route.quality)
+        _autoStart = State(initialValue: route.autoStart)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: VFTheme.Spacing.xl) {
+            Text("Edit Route")
+                .font(VFTheme.Typography.largeTitle)
+                .foregroundStyle(VFTheme.Colors.textPrimary)
+
+            VStack(alignment: .leading, spacing: VFTheme.Spacing.sm) {
+                Text("Name").font(VFTheme.Typography.headline).foregroundStyle(VFTheme.Colors.textSecondary)
+                TextField("Route name", text: $name).textFieldStyle(.roundedBorder)
+            }
+            VStack(alignment: .leading, spacing: VFTheme.Spacing.sm) {
+                Text("Quality").font(VFTheme.Typography.headline).foregroundStyle(VFTheme.Colors.textSecondary)
+                Picker("", selection: $quality) {
+                    ForEach(StreamQuality.allCases) { q in Text("\(q.rawValue) — \(q.detail)").tag(q) }
+                }
+                .pickerStyle(.segmented).labelsHidden()
+            }
+            Toggle("Start automatically on launch", isOn: $autoStart)
+                .font(VFTheme.Typography.body)
+                .foregroundStyle(VFTheme.Colors.textPrimary)
+            Text("Changes to quality apply the next time this route starts.")
+                .font(VFTheme.Typography.caption)
+                .foregroundStyle(VFTheme.Colors.textTertiary)
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.buttonStyle(.bordered).keyboardShortcut(.cancelAction)
+                Button("Save") { save() }
+                    .buttonStyle(.borderedProminent).tint(VFTheme.Colors.accent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(VFTheme.Spacing.xl)
+        .frame(width: 460)
+        .background(VFTheme.Colors.background)
+    }
+
+    private func save() {
+        var updated = route
+        updated.name = name.trimmingCharacters(in: .whitespaces)
+        updated.quality = quality
+        updated.autoStart = autoStart
+        streamService.updateRoute(updated)
+        dismiss()
     }
 }
 
