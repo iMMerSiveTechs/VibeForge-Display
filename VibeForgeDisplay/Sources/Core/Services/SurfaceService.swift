@@ -121,7 +121,7 @@ final class SurfaceService {
         configs[index].frameY = frame.origin.y
         configs[index].frameWidth = frame.size.width
         configs[index].frameHeight = frame.size.height
-        persistConfigs()
+        scheduleConfigSave()
     }
 
     /// Ensures the surface window is open and returns its CGWindowID for capture.
@@ -142,7 +142,7 @@ final class SurfaceService {
     func updateNotePad(surfaceID: UUID, widgetID: UUID, data: NotePadData) {
         ensureStorage(for: surfaceID)
         widgetStorage[surfaceID]?.notePads[widgetID] = data
-        persistWidgetStorage()
+        scheduleWidgetSave()
     }
 
     func checklistData(for surfaceID: UUID, widgetID: UUID) -> ChecklistData {
@@ -152,7 +152,7 @@ final class SurfaceService {
     func updateChecklist(surfaceID: UUID, widgetID: UUID, data: ChecklistData) {
         ensureStorage(for: surfaceID)
         widgetStorage[surfaceID]?.checklists[widgetID] = data
-        persistWidgetStorage()
+        scheduleWidgetSave()
     }
 
     func timerData(for surfaceID: UUID, widgetID: UUID) -> TimerData {
@@ -162,7 +162,7 @@ final class SurfaceService {
     func updateTimer(surfaceID: UUID, widgetID: UUID, data: TimerData) {
         ensureStorage(for: surfaceID)
         widgetStorage[surfaceID]?.timers[widgetID] = data
-        persistWidgetStorage()
+        scheduleWidgetSave()
     }
 
     func linkCardsData(for surfaceID: UUID, widgetID: UUID) -> LinkCardsData {
@@ -172,7 +172,7 @@ final class SurfaceService {
     func updateLinkCards(surfaceID: UUID, widgetID: UUID, data: LinkCardsData) {
         ensureStorage(for: surfaceID)
         widgetStorage[surfaceID]?.linkCards[widgetID] = data
-        persistWidgetStorage()
+        scheduleWidgetSave()
     }
 
     private func ensureStorage(for surfaceID: UUID) {
@@ -221,6 +221,31 @@ final class SurfaceService {
             try persistence.save(storages, to: widgetStorageFileName)
         } catch {
             logService.log(.error, "Failed to save widget data", detail: error.localizedDescription)
+        }
+    }
+
+    // MARK: - Debounced saves
+    // Notes fire per-keystroke and window drags fire per-move; coalesce these into
+    // one write ~0.4s after activity stops instead of hammering main-thread disk I/O.
+
+    private var widgetSaveTask: Task<Void, Never>?
+    private var configSaveTask: Task<Void, Never>?
+
+    private func scheduleWidgetSave() {
+        widgetSaveTask?.cancel()
+        widgetSaveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            self?.persistWidgetStorage()
+        }
+    }
+
+    private func scheduleConfigSave() {
+        configSaveTask?.cancel()
+        configSaveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            self?.persistConfigs()
         }
     }
 }

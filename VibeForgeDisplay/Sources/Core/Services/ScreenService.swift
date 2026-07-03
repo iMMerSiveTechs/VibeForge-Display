@@ -40,13 +40,17 @@ final class ScreenService {
         guard let cgModes = CGDisplayCopyAllDisplayModes(displayID, options) as? [CGDisplayMode] else {
             return []
         }
-        return cgModes.map { mode in
-            DisplayModeInfo(
+        // Dedupe — the duplicate-low-res option can yield modes that map to the
+        // same DisplayModeInfo.id, which would break ForEach identity in the UI.
+        var seen = Set<String>()
+        return cgModes.compactMap { mode -> DisplayModeInfo? in
+            let info = DisplayModeInfo(
                 width: mode.pixelWidth,
                 height: mode.pixelHeight,
                 refreshRate: mode.refreshRate,
                 isUsableForDesktop: mode.isUsableForDesktopGUI()
             )
+            return seen.insert(info.id).inserted ? info : nil
         }
     }
 
