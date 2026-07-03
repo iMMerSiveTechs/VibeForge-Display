@@ -38,6 +38,44 @@ final class SurfaceService {
         guard let index = configs.firstIndex(where: { $0.id == config.id }) else { return }
         configs[index] = config
         persistConfigs()
+        applyConfigToOpenWindow(config)
+    }
+
+    /// Restores a snapshotted surface (from a Wall Preset) if it's not present.
+    @discardableResult
+    func addConfigIfMissing(_ config: SurfaceConfig) -> Bool {
+        guard !configs.contains(where: { $0.id == config.id }) else { return false }
+        var restored = config
+        restored.isOpen = false
+        configs.append(restored)
+        if widgetStorage[config.id] == nil {
+            widgetStorage[config.id] = SurfaceWidgetStorage(surfaceID: config.id)
+        }
+        persistConfigs()
+        persistWidgetStorage()
+        logService.log(.surface, "Restored surface: \(config.name)")
+        return true
+    }
+
+    /// Live-applies opacity / always-on-top / target screen to an open window so
+    /// the settings sliders/toggles take effect immediately (not just on reopen).
+    private func applyConfigToOpenWindow(_ config: SurfaceConfig) {
+        guard let window = windows[config.id] else { return }
+        window.alphaValue = config.opacity
+        window.level = config.alwaysOnTop ? .floating : .normal
+        // Snap to the target screen only if the window isn't already on it — so a
+        // continuous opacity/toggle change doesn't keep re-centering the window.
+        guard let screenID = config.targetScreenID,
+              let screen = NSScreen.screens.first(where: {
+                  ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32) == screenID
+              }) else { return }
+        let currentScreenID = window.screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32
+        if currentScreenID != screenID {
+            var frame = window.frame
+            frame.origin = NSPoint(x: screen.frame.midX - frame.width / 2,
+                                   y: screen.frame.midY - frame.height / 2)
+            window.setFrame(frame, display: true, animate: true)
+        }
     }
 
     func deleteSurface(_ id: UUID) {

@@ -64,6 +64,7 @@ final class AppState {
             persistence: persistence,
             logService: logService,
             virtualDisplayService: virtualDisplayService,
+            surfaceService: surfaceService,
             streamService: streamService
         )
 

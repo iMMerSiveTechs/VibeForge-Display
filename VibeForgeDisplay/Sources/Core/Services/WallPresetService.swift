@@ -6,29 +6,49 @@ import Observation
 @MainActor
 @Observable
 final class WallPresetService {
+    struct ApplyReport: Sendable {
+        var screensRestored = 0
+        var surfacesRestored = 0
+        var routesRestored = 0
+        var routesStarted = 0
+        var failures: [String] = []
+    }
+
     private(set) var presets: [WallPreset] = []
+    /// Result of the most recent apply, for the UI to surface.
+    private(set) var lastApplyReport: ApplyReport?
+
     private let persistence: PersistenceManager
     private let logService: LogService
     private let virtualDisplayService: VirtualDisplayService
+    private let surfaceService: SurfaceService
     private let streamService: StreamService
 
     init(
         persistence: PersistenceManager,
         logService: LogService,
         virtualDisplayService: VirtualDisplayService,
+        surfaceService: SurfaceService,
         streamService: StreamService
     ) {
         self.persistence = persistence
         self.logService = logService
         self.virtualDisplayService = virtualDisplayService
+        self.surfaceService = surfaceService
         self.streamService = streamService
         load()
     }
 
     func saveCurrent(name: String) {
+        // Snapshot only the surfaces actually referenced by surface routes.
+        let usedSurfaceIDs = Set(streamService.routes
+            .filter { $0.sourceKind == .surface }
+            .map(\.sourceID))
+        let surfaces = surfaceService.configs.filter { usedSurfaceIDs.contains($0.id) }
         let preset = WallPreset(
             name: name,
             virtualScreens: virtualDisplayService.configs,
+            surfaces: surfaces,
             routes: streamService.routes
         )
         presets.append(preset)
@@ -43,25 +63,55 @@ final class WallPresetService {
         logService.log(.system, "Deleted wall preset: \(name)")
     }
 
-    /// Recreates the layout: adds+activates any missing virtual screens, adds any
-    /// missing routes, then starts routes flagged auto-start.
+    /// Recreates the layout: restores+activates virtual screens, restores
+    /// snapshotted surfaces, restores routes, then starts routes flagged
+    /// auto-start. Records an ApplyReport (surfaced by the UI).
     func apply(_ preset: WallPreset) async {
+        var report = ApplyReport()
+
         for vs in preset.virtualScreens {
             if !virtualDisplayService.configs.contains(where: { $0.id == vs.id }) {
                 virtualDisplayService.addConfig(vs)
+                report.screensRestored += 1
             }
             if !virtualDisplayService.isActive(vs.id) {
-                await virtualDisplayService.createDisplay(config: vs)
+                let ok = await virtualDisplayService.createDisplay(config: vs)
+                if !ok { report.failures.append("Couldn't activate screen “\(vs.name)”.") }
             }
         }
-        for route in preset.routes where !streamService.routes.contains(where: { $0.id == route.id }) {
-            streamService.addRoute(route)
+
+        for surface in preset.surfaces where surfaceService.addConfigIfMissing(surface) {
+            report.surfacesRestored += 1
         }
-        for route in preset.routes where route.autoStart {
-            await streamService.startRoute(route.id)
+
+        for route in preset.routes {
+            // Skip routes whose source can't be resolved (e.g. a deleted surface
+            // that predates surface-snapshotting).
+            let resolvable: Bool
+            switch route.sourceKind {
+            case .virtualScreen: resolvable = virtualDisplayService.configs.contains { $0.id == route.sourceID }
+            case .surface: resolvable = surfaceService.configs.contains { $0.id == route.sourceID }
+            }
+            guard resolvable else {
+                report.failures.append("Route “\(route.name)” has no source and was skipped.")
+                continue
+            }
+            if !streamService.routes.contains(where: { $0.id == route.id }) {
+                streamService.addRoute(route)
+                report.routesRestored += 1
+            }
+            if route.autoStart {
+                await streamService.startRoute(route.id)
+                if streamService.isStreaming(route.id) { report.routesStarted += 1 }
+                else if let err = streamService.error(for: route.id) { report.failures.append(err) }
+            }
         }
+
+        lastApplyReport = report
         logService.log(.system, "Applied wall preset: \(preset.name)", detail: preset.summary)
     }
+
+    func clearApplyReport() { lastApplyReport = nil }
 
     // MARK: Persistence
 

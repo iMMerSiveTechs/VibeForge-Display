@@ -6,6 +6,7 @@ struct WallPresetsBar: View {
     let wallPresetService: WallPresetService
     @State private var showSaveSheet = false
     @State private var applying: UUID?
+    @State private var showReport = false
 
     var body: some View {
         HStack(spacing: VFTheme.Spacing.sm) {
@@ -43,6 +44,15 @@ struct WallPresetsBar: View {
         .background(VFTheme.Colors.surface.opacity(0.15))
         .sheet(isPresented: $showSaveSheet) {
             SaveWallPresetSheet(wallPresetService: wallPresetService)
+        }
+        .alert("Preset applied", isPresented: $showReport) {
+            Button("OK") { wallPresetService.clearApplyReport() }
+        } message: {
+            if let r = wallPresetService.lastApplyReport {
+                var lines = ["Restored \(r.screensRestored) screen(s), \(r.surfacesRestored) surface(s), \(r.routesRestored) route(s); started \(r.routesStarted)."]
+                if !r.failures.isEmpty { lines.append("\nIssues:\n" + r.failures.joined(separator: "\n")) }
+                Text(lines.joined(separator: "\n"))
+            }
         }
     }
 
@@ -87,6 +97,7 @@ struct WallPresetsBar: View {
         Task {
             await wallPresetService.apply(preset)
             applying = nil
+            showReport = true
         }
     }
 }
@@ -103,7 +114,7 @@ struct SaveWallPresetSheet: View {
             Text("Save Wall Preset")
                 .font(VFTheme.Typography.largeTitle)
                 .foregroundStyle(VFTheme.Colors.textPrimary)
-            Text("Snapshots your current virtual screens and routes so you can restore the whole layout with one tap.")
+            Text("Snapshots your current virtual screens, the surfaces they use, and all routes — so you can restore the whole layout with one tap. (Applying adds this preset's items; it doesn't remove others.)")
                 .font(VFTheme.Typography.caption)
                 .foregroundStyle(VFTheme.Colors.textSecondary)
             TextField("e.g. Living Room + Kitchen TVs", text: $name)
