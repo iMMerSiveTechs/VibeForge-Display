@@ -323,7 +323,7 @@ struct RouteRow: View {
                 .controlSize(.small)
                 .accessibilityLabel("Edit route \(route.name)")
                 .disabled(isStreaming)
-                .help("Edit name, quality, and auto-start")
+                .help(isStreaming ? "Stop the stream to edit this route." : "Edit name, quality, and auto-start")
 
                 Button(action: { showDeleteConfirm = true }) {
                     Image(systemName: "trash").foregroundStyle(VFTheme.Colors.error)

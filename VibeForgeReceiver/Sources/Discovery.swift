@@ -11,18 +11,24 @@ struct StreamInfo: Identifiable, Hashable {
 /// session token, then lists streams and builds playback URLs under /t/<token>/.
 enum StreamsClient {
     enum FetchResult { case ok([StreamInfo]); case unauthorized; case failed }
+    /// Distinguishes "couldn't reach the Mac" (network) from "the Mac said no"
+    /// (wrong/expired PIN) so the receiver can show an accurate, actionable error.
+    enum PairResult { case ok(String); case rejected; case unreachable }
 
     /// Exchanges a 6-digit PIN (shown on the Mac) for the session token.
-    static func pair(host: String, port: Int, pin: String) async -> String? {
+    static func pair(host: String, port: Int, pin: String) async -> PairResult {
         let digits = pin.filter { $0.isNumber }
-        guard let url = URL(string: "http://\(host):\(port)/pair?pin=\(digits)") else { return nil }
+        guard let url = URL(string: "http://\(host):\(port)/pair?pin=\(digits)") else { return .rejected }
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-            let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: String]
-            return obj?["token"]
+            // Any HTTP reply means we reached the Mac: a non-200 (or missing
+            // token) is a rejection, not a connectivity problem.
+            guard (response as? HTTPURLResponse)?.statusCode == 200,
+                  let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: String],
+                  let token = obj["token"] else { return .rejected }
+            return .ok(token)
         } catch {
-            return nil
+            return .unreachable
         }
     }
 

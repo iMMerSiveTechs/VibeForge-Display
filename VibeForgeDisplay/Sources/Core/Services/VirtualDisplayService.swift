@@ -238,7 +238,16 @@ final class VirtualDisplayService {
     private func loadConfigs() {
         guard persistence.exists(configsFileName) else { return }
         do {
-            configs = try persistence.load([VirtualScreenConfig].self, from: configsFileName)
+            let loaded = try persistence.load([VirtualScreenConfig].self, from: configsFileName)
+            // Sanitize: a hand-edited or corrupt file could carry a negative or
+            // absurd width/height, and `UInt32(config.width)` in createDisplay
+            // TRAPS on out-of-range Int. Clamp to a sane display range up front.
+            configs = loaded.map { config in
+                var c = config
+                c.width = min(max(config.width, VFConstants.Display.minPixels), VFConstants.Display.maxPixels)
+                c.height = min(max(config.height, VFConstants.Display.minPixels), VFConstants.Display.maxPixels)
+                return c
+            }
             logService.log(.screen, "Loaded \(configs.count) virtual screen config(s)")
         } catch {
             logService.log(.error, "Failed to load virtual screen configs",

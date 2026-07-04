@@ -71,7 +71,7 @@ struct ServerStreamsView: View {
     @State private var streams: [StreamInfo] = []
     @State private var loading = false
     @State private var pin = ""
-    @State private var pairError = false
+    @State private var pairError: String?
     @State private var pairing = false
 
     var body: some View {
@@ -102,8 +102,8 @@ struct ServerStreamsView: View {
                 .textContentType(.oneTimeCode)
                 .keyboardType(.numberPad)
                 .frame(maxWidth: 400)
-            if pairError {
-                Label("Wrong or expired code, or couldn't reach the Mac. Check Wi-Fi, then get a fresh code on the Mac.", systemImage: "exclamationmark.triangle")
+            if let pairError {
+                Label(pairError, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)
             }
             Button {
@@ -142,14 +142,17 @@ struct ServerStreamsView: View {
 
     private func submitPIN() async {
         pairing = true
-        pairError = false
-        if let t = await StreamsClient.pair(host: host, port: port, pin: pin) {
+        pairError = nil
+        switch await StreamsClient.pair(host: host, port: port, pin: pin) {
+        case .ok(let t):
             StreamsClient.storeToken(t, host: host)
             token = t
             pin = ""
             await reload()
-        } else {
-            pairError = true
+        case .rejected:
+            pairError = "Wrong or expired code. Get a fresh code on the Mac (Routes → “Pair Apple TV”) and try again."
+        case .unreachable:
+            pairError = "Couldn’t reach the Mac. Check that both devices are on the same Wi-Fi and VibeForge is running."
         }
         pairing = false
     }

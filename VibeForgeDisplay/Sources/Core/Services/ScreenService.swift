@@ -9,11 +9,26 @@ final class ScreenService {
     private(set) var screens: [ScreenInfo] = []
     private(set) var isEnumerating = false
     private let logService: LogService
+    private var observerToken: NSObjectProtocol?
+    private var refreshTask: Task<Void, Never>?
+
+    // Capture-free C thunk (must be a stable reference for register+remove).
+    private static let reconfigCallback: CGDisplayReconfigurationCallBack = { _, _, _ in
+        Task { @MainActor in
+            NotificationCenter.default.post(name: .screenConfigurationDidChange, object: nil)
+        }
+    }
 
     init(logService: LogService) {
         self.logService = logService
         refresh()
         registerForDisplayChanges()
+    }
+
+    deinit {
+        CGDisplayRemoveReconfigurationCallback(ScreenService.reconfigCallback, nil)
+        if let observerToken { NotificationCenter.default.removeObserver(observerToken) }
+        refreshTask?.cancel()
     }
 
     func refresh() {
@@ -110,23 +125,26 @@ final class ScreenService {
     }
 
     private func registerForDisplayChanges() {
-        let callback: CGDisplayReconfigurationCallBack = { _, _, _ in
-            Task { @MainActor in
-                // The ScreenService instance is found through the app state
-                // This callback triggers a refresh via notification
-                NotificationCenter.default.post(name: .screenConfigurationDidChange, object: nil)
-            }
-        }
-        CGDisplayRegisterReconfigurationCallback(callback, nil)
+        CGDisplayRegisterReconfigurationCallback(ScreenService.reconfigCallback, nil)
 
-        NotificationCenter.default.addObserver(
+        // A single hot-plug fires the CG callback several times (begin+completed
+        // per display); coalesce so we don't run refresh() — which enumerates
+        // every display's modes on the main thread — in a hitchy burst.
+        observerToken = NotificationCenter.default.addObserver(
             forName: .screenConfigurationDidChange,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
-                self?.refresh()
-            }
+            Task { @MainActor in self?.scheduleRefresh() }
+        }
+    }
+
+    private func scheduleRefresh() {
+        refreshTask?.cancel()
+        refreshTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !Task.isCancelled else { return }
+            refresh()
         }
     }
 }

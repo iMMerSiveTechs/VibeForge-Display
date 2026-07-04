@@ -209,7 +209,7 @@ struct VirtualDisplayCard: View {
                 .controlSize(.small)
                 .disabled(isActive)
                 .accessibilityLabel("Edit \(config.name)")
-                .help("Edit name and auto-start (resolution changes need recreating the screen)")
+                .help(isActive ? "Deactivate this screen to edit it." : "Edit name and auto-start (resolution changes need recreating the screen)")
 
                 Button(action: { showDeleteConfirm = true }) {
                     Image(systemName: "trash").foregroundStyle(VFTheme.Colors.error)

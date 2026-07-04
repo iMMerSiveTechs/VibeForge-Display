@@ -32,6 +32,14 @@ enum VFConstants {
         static let connectionTimeout: Double = 12
     }
 
+    enum Display {
+        /// Clamp bounds for a virtual-screen dimension. Guards the private-API
+        /// `UInt32(config.width)` cast (which traps on a negative/huge value from
+        /// a corrupt or hand-edited configs file) and keeps modes sane.
+        static let minPixels = 320
+        static let maxPixels = 16384
+    }
+
     enum Security {
         /// Seconds a pairing PIN stays valid after the user opens pairing on the Mac.
         static let pairingWindow: TimeInterval = 120
