@@ -28,6 +28,9 @@ final class SurfaceWindow: NSPanel {
         window.title = config.name
         window.isMovableByWindowBackground = true
         window.hasShadow = true
+        // NSPanels default to hiding when the app deactivates; a Surface is meant
+        // to stay put (and stay capturable) while you work in other apps.
+        window.hidesOnDeactivate = false
         // Opacity is applied once, via the window's alphaValue. (Previously the
         // background color alpha ALSO used opacity, so the result was opacity².)
         window.backgroundColor = NSColor(red: 0.08, green: 0.08, blue: 0.10, alpha: 1.0)

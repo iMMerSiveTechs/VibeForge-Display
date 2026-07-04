@@ -73,6 +73,14 @@ final class AppState {
         self.streamService = streamService
         self.wallPresetService = wallPresetService
 
+        // Deactivating/deleting a source stops any route streaming it (was dead code).
+        virtualDisplayService.onSourceWillDeactivate = { [weak streamService] id in
+            streamService?.stopRoutesUsing(sourceID: id)
+        }
+        surfaceService.onSourceWillDeactivate = { [weak streamService] id in
+            streamService?.stopRoutesUsing(sourceID: id)
+        }
+
         logService.log(.system, "VibeForge Display launched", detail: "v\(VFConstants.appVersion)")
         streamService.scheduleAutoStart()
         registerTerminationHook()
@@ -88,6 +96,7 @@ final class AppState {
             MainActor.assumeIsolated {
                 self?.streamService.stopAll()
                 self?.hlsServer.stop()
+                self?.surfaceService.flushPendingSaves()   // don't lose the last note keystroke
                 self?.virtualDisplayService.markCleanExit()
             }
         }

@@ -186,8 +186,14 @@ final class VirtualDisplayService {
 
     // MARK: - Destroy Virtual Display
 
+    /// Set by AppState to stop any route streaming a source before it disappears,
+    /// so deactivating/deleting a screen cleanly stops its stream instead of
+    /// leaving it to die with a scary error (or freeze on the last frame).
+    var onSourceWillDeactivate: ((UUID) -> Void)?
+
     func destroyDisplay(_ id: UUID) {
         guard activeDisplays[id] != nil else { return }
+        onSourceWillDeactivate?(id)
         let name = configs.first(where: { $0.id == id })?.name ?? "Unknown"
         // Releasing the reference destroys the virtual display
         activeDisplays.removeValue(forKey: id)
@@ -196,6 +202,7 @@ final class VirtualDisplayService {
     }
 
     func destroyAll() {
+        for id in activeConfigIDs { onSourceWillDeactivate?(id) }
         for id in activeConfigIDs {
             activeDisplays.removeValue(forKey: id)
         }

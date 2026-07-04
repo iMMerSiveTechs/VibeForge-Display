@@ -158,7 +158,7 @@ final class StreamService {
             logService: logService
         )
         // Clean up if capture dies later (source destroyed, permission revoked, …).
-        session.onStopped = { [weak self] message in
+        session.setOnStopped { [weak self] message in
             Task { @MainActor in self?.handleSessionStopped(id, error: message) }
         }
         do {
@@ -199,7 +199,7 @@ final class StreamService {
             return
         }
         let route = routes.first(where: { $0.id == id })
-        session.onStopped = nil          // we're stopping deliberately; no failure callback
+        session.setOnStopped(nil)        // we're stopping deliberately; no failure callback
         session.stop()
         sessions.removeValue(forKey: id)
         streamingRouteIDs.remove(id)
@@ -222,10 +222,14 @@ final class StreamService {
         }
     }
 
-    /// Invoked when a session's capture dies on its own (SCStream didStopWithError).
+    /// Invoked when a session's capture dies on its own (SCStream/writer failure).
     private func handleSessionStopped(_ id: UUID, error: String?) {
-        guard sessions[id] != nil else { return }
+        guard let session = sessions[id] else { return }
         let route = routes.first(where: { $0.id == id })
+        // Fully tear the session down — otherwise the keep-alive timer + encoder
+        // keep running forever and the session leaks (SCStream retains it).
+        session.setOnStopped(nil)
+        session.stop()
         sessions.removeValue(forKey: id)
         streamingRouteIDs.remove(id)
         if let key = route?.streamKey { hlsServer.store.unregister(key: key) }
@@ -291,9 +295,17 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
     private let logService: LogService
 
     /// Called (once) if the capture stops on its own — e.g. the source display is
-    /// destroyed, the Surface window closes, or Screen Recording is revoked. Nil'd
-    /// out on a deliberate stop() so we don't report a user-initiated stop as failure.
-    var onStopped: (@Sendable (String?) -> Void)?
+    /// destroyed, the Surface window closes, Screen Recording is revoked, or the
+    /// encoder fails. Guarded by stopLock: set on the main actor, read/cleared on
+    /// the SCStream delegate queue and the sample queue.
+    private var _onStopped: (@Sendable (String?) -> Void)?
+    func setOnStopped(_ cb: (@Sendable (String?) -> Void)?) {
+        stopLock.lock(); _onStopped = cb; stopLock.unlock()
+    }
+    private func takeOnStopped() -> (@Sendable (String?) -> Void)? {
+        stopLock.lock(); defer { stopLock.unlock() }
+        let cb = _onStopped; _onStopped = nil; return cb
+    }
 
     private var stream: SCStream?
     private var writer: AVAssetWriter?
@@ -305,7 +317,7 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
     // after a rapid stop -> start on the same route.
     private let stopLock = NSLock()
     private var stopped = false
-    private let sampleQueue = DispatchQueue(label: "vibeforge.stream.samples")
+    private lazy var sampleQueue = DispatchQueue(label: "vibeforge.stream.samples.\(route.streamKey)")
 
     // Zero-based encode timeline (so init/segment times are consistent) plus a
     // keep-alive that re-emits the last frame on a static screen — otherwise
@@ -421,7 +433,9 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
         // keep-alive timer, which also runs on sampleQueue — so no locking needed.
         guard !isStopping, type == .screen, sampleBuffer.isValid else { return }
         guard StreamSession.isComplete(sampleBuffer) else { return }
-        guard let writer, let input = videoInput, writer.status == .writing else { return }
+        guard let writer, let input = videoInput else { return }
+        if writer.status == .failed { reportFailure(writer.error); return }
+        guard writer.status == .writing else { return }
 
         let now = CACurrentMediaTime()
         if baselineHost == nil {
@@ -453,9 +467,25 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
             allocator: kCFAllocatorDefault, sampleBuffer: sample,
             sampleTimingEntryCount: 1, sampleTimingArray: &timing, sampleBufferOut: &copy)
         guard status == noErr, let out = copy else { return }
-        input.append(out)
-        lastAdjustedPTS = pts
-        statsLock.lock(); _framesEncoded += 1; statsLock.unlock()
+        // append returns false when the writer has failed (we already checked
+        // isReadyForMoreMediaData), so a false result means the encoder died.
+        if input.append(out) {
+            lastAdjustedPTS = pts
+            statsLock.lock(); _framesEncoded += 1; statsLock.unlock()
+        } else {
+            reportFailure(writer?.error)
+        }
+    }
+
+    /// Encoder/writer failed mid-stream: tear down and notify (all on sampleQueue).
+    private func reportFailure(_ error: Error?) {
+        guard !isStopping else { return }
+        let message = error?.localizedDescription ?? "encoder failed"
+        teardownWriter(failed: true)
+        Task { @MainActor in
+            self.logService.log(.error, "Stream encoder failed: \(self.route.name)", detail: message)
+        }
+        takeOnStopped()?(message)
     }
 
     private func startKeepAliveIfNeeded() {
@@ -471,7 +501,10 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
     /// the current wall-clock time so AVAssetWriter keeps cutting segments.
     private func keepAliveTick() {
         guard !isStopping, sessionStarted,
-              let input = videoInput, let last = lastSample else { return }
+              let input = videoInput, let writer, let last = lastSample else { return }
+        // Detect a writer that failed while the screen was static (no real frames
+        // arriving to catch it) so we don't re-emit into a dead encoder forever.
+        guard writer.status == .writing else { reportFailure(writer.error); return }
         let now = CACurrentMediaTime()
         if now - lastRealFrameHost < 0.9 { return }
         appendRetimed(last, at: now, input: input)
@@ -479,11 +512,10 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         let message = error.localizedDescription
-        onStopped?(message)
-        onStopped = nil
         Task { @MainActor in
             self.logService.log(.error, "Capture stopped: \(self.route.name)", detail: message)
         }
+        takeOnStopped()?(message)
     }
 
     /// ScreenCaptureKit sends idle/blank frames; only forward frames with fresh image data.
@@ -517,22 +549,35 @@ final class StreamSession: NSObject, SCStreamOutput, SCStreamDelegate, AVAssetWr
     // MARK: Teardown
 
     func stop() {
-        onStopped = nil
+        setOnStopped(nil)
         stopLock.lock(); stopped = true; stopLock.unlock()
         stream?.stopCapture { _ in }
         stream = nil
         // Finalize the writer on sampleQueue so it can't race an in-flight append
         // (append-after-markAsFinished throws NSInternalInconsistencyException).
         sampleQueue.async { [weak self] in
-            guard let self else { return }
-            self.isStopping = true
-            self.keepAliveTimer?.cancel()
-            self.keepAliveTimer = nil
-            self.videoInput?.markAsFinished()
-            self.writer?.finishWriting { }
-            self.writer = nil
-            self.videoInput = nil
-            self.lastSample = nil
+            self?.teardownWriter(failed: false)
         }
+    }
+
+    /// Tears down the writer + keep-alive. MUST be called on sampleQueue.
+    /// `failed`/`!sessionStarted` → cancelWriting (finishWriting without a started
+    /// session can throw NSInternalInconsistencyException).
+    private func teardownWriter(failed: Bool) {
+        isStopping = true
+        stopLock.lock(); stopped = true; stopLock.unlock()
+        keepAliveTimer?.cancel()
+        keepAliveTimer = nil
+        if let writer {
+            if sessionStarted && !failed {
+                videoInput?.markAsFinished()
+                writer.finishWriting { }
+            } else {
+                writer.cancelWriting()
+            }
+        }
+        writer = nil
+        videoInput = nil
+        lastSample = nil
     }
 }

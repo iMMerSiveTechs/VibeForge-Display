@@ -90,12 +90,20 @@ final class SurfaceService {
 
     // MARK: - Window Management
 
+    /// Set by AppState to stop any route streaming a Surface before the window
+    /// closes (a closed/hidden window can't be captured).
+    var onSourceWillDeactivate: ((UUID) -> Void)?
+
     func openSurfaceWindow(_ id: UUID) {
         guard let index = configs.firstIndex(where: { $0.id == id }) else { return }
         let config = configs[index]
 
-        if let existing = windows[id], existing.isVisible {
+        // Re-front an existing window even if it was ordered out (NSPanels hide on
+        // app deactivation) — don't spawn a duplicate that leaks the old panel and
+        // desyncs the captured window ID.
+        if let existing = windows[id] {
             existing.makeKeyAndOrderFront(nil)
+            configs[index].isOpen = true
             return
         }
 
@@ -109,6 +117,7 @@ final class SurfaceService {
 
     func closeSurfaceWindow(_ id: UUID) {
         guard let index = configs.firstIndex(where: { $0.id == id }) else { return }
+        onSourceWillDeactivate?(id)   // stop any route streaming this surface
         windows[id]?.close()
         windows.removeValue(forKey: id)
         configs[index].isOpen = false
@@ -129,8 +138,19 @@ final class SurfaceService {
         if windows[id] == nil || windows[id]?.isVisible == false {
             openSurfaceWindow(id)
         }
-        guard let number = windows[id]?.windowNumber else { return nil }
+        // windowNumber can be <= 0 before a window is on screen; CGWindowID(Int(-1))
+        // would trap, so guard it.
+        guard let number = windows[id]?.windowNumber, number > 0 else { return nil }
         return CGWindowID(number)
+    }
+
+    /// Flush pending debounced writes — call on app termination so the last note
+    /// keystroke / window move isn't lost (the debounce Task never wakes on quit).
+    func flushPendingSaves() {
+        widgetSaveTask?.cancel(); widgetSaveTask = nil
+        configSaveTask?.cancel(); configSaveTask = nil
+        persistConfigs()
+        persistWidgetStorage()
     }
 
     // MARK: - Widget Data
