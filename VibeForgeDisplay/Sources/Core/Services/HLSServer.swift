@@ -52,9 +52,16 @@ final class HLSSegmentStore: @unchecked Sendable {
         streams[key] = s
     }
 
+    /// Only streams that are actually playable (init + >=1 segment). Advertising a
+    /// stream during its ~1-2s warm-up makes a receiver 404 on the playlist and
+    /// (for AVPlayer) fail the item permanently — it looked "ended" for a stream
+    /// about to go live.
     func streamList() -> [(key: String, name: String)] {
         lock.lock(); defer { lock.unlock() }
-        return streams.map { ($0.key, $0.value.name) }.sorted { $0.name < $1.name }
+        return streams
+            .filter { $0.value.initData != nil && !$0.value.segments.isEmpty }
+            .map { ($0.key, $0.value.name) }
+            .sorted { $0.name < $1.name }
     }
 
     func initData(key: String) -> Data? {
@@ -73,10 +80,11 @@ final class HLSSegmentStore: @unchecked Sendable {
         // Serve only once we have the init segment AND at least one media segment —
         // an init-only playlist makes players raise spurious "empty playlist" errors.
         guard let s = streams[key], s.initData != nil, !s.segments.isEmpty else { return nil }
-        // TARGETDURATION must be >= the longest EXTINF (spec) — derive it, since a
-        // keep-alive gap can briefly produce a slightly longer segment.
-        let maxDur = s.segments.map(\.duration).max() ?? VFConstants.Streaming.segmentDuration
-        let target = max(1, Int(ceil(maxDur)))
+        // TARGETDURATION MUST be constant for the life of the stream (RFC 8216) —
+        // an oscillating value breaks AVPlayer's live-edge/reload math. Pin it; the
+        // keep-alive keeps real segments under this bound, and we clamp EXTINF to it
+        // defensively so a rare long segment can't exceed the declared target.
+        let target = max(2, Int(ceil(VFConstants.Streaming.segmentDuration)))
         var lines = [
             "#EXTM3U",
             "#EXT-X-VERSION:7",
@@ -85,7 +93,8 @@ final class HLSSegmentStore: @unchecked Sendable {
             "#EXT-X-MAP:URI=\"init.mp4\"",
         ]
         for seg in s.segments {
-            lines.append(String(format: "#EXTINF:%.3f,", seg.duration))
+            let dur = min(seg.duration, Double(target))
+            lines.append(String(format: "#EXTINF:%.3f,", dur))
             lines.append("seg/\(seg.index).m4s")
         }
         return lines.joined(separator: "\n") + "\n"
@@ -93,6 +102,14 @@ final class HLSSegmentStore: @unchecked Sendable {
 }
 
 // MARK: - HLS / HTTP server
+
+/// One-shot flag so a per-connection slot is released exactly once even though a
+/// connection can report both .failed and (after cancel) .cancelled.
+final class OnceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    func trigger() -> Bool { lock.lock(); defer { lock.unlock() }; if done { return false }; done = true; return true }
+}
 
 /// Lock-guarded concurrent-connection counter, safe to touch from the
 /// `nonisolated` connection handlers (which can't reach main-actor state).
@@ -202,11 +219,24 @@ final class HLSServer {
 
     /// Starts the server if needed and resolves once it's actually listening
     /// (.ready) or has failed to bind. Returns whether it is serving.
+    /// A hard deadline guarantees resolution even if NWListener parks in
+    /// `.waiting` — which is exactly what a denied macOS Local Network
+    /// permission does (it never proceeds to `.ready` or `.failed`), and would
+    /// otherwise suspend the caller's Task forever and leak the continuation.
     func startAndWait() async -> Bool {
         if isRunning { return true }
         return await withCheckedContinuation { continuation in
             readinessWaiters.append(continuation)
             start()
+            let deadline = DispatchTime.now() + 6
+            queue.asyncAfter(deadline: deadline) { [weak self] in
+                Task { @MainActor in
+                    guard let self, !self.isRunning else { return }
+                    self.logService.log(.error, "Stream server didn't become ready",
+                                        detail: "check Local Network permission")
+                    self.resolveReadiness(false)
+                }
+            }
         }
     }
 
@@ -231,9 +261,11 @@ final class HLSServer {
     nonisolated private func handle(_ conn: NWConnection) {
         // Cap concurrent connections (FD-exhaustion / slow-loris defense).
         guard limiter.tryAcquire() else { conn.cancel(); return }
+        let releaseOnce = OnceFlag()   // .failed then .cancelled must not double-release
         conn.stateUpdateHandler = { [weak self] state in
             switch state {
-            case .cancelled, .failed: self?.limiter.release()
+            case .cancelled, .failed:
+                if releaseOnce.trigger() { self?.limiter.release() }
             default: break
             }
         }

@@ -93,8 +93,18 @@ enum WebReceiver {
     v.addEventListener('waiting', () => setStatus('Buffering…'));
 
     if (v.canPlayType('application/vnd.apple.mpegurl')) {
-      v.src = src;
-      v.play().catch(() => setStatus('Tap to start playback'));
+      // Native HLS (Safari / iOS / macOS). The stream may still be warming up
+      // (404 for ~1-2s) or the Mac may have stopped it, so retry on error with
+      // backoff instead of dying on the first failure.
+      let tries = 0;
+      const load = () => { v.src = src; v.load(); v.play().catch(() => setStatus('Tap to start playback')); };
+      v.addEventListener('error', () => {
+        tries++;
+        if (tries > 40) { setStatus('Stream unavailable — is it still running on the Mac?', true); return; }
+        setStatus('Reconnecting…', false);
+        setTimeout(load, 1500);
+      });
+      load();
       return;
     }
     // Fallback for browsers without native HLS (Android/Fire TV/Chrome).
@@ -111,7 +121,20 @@ enum WebReceiver {
         const hls = new window.Hls({ lowLatencyMode: true, liveSyncDurationCount: 2, maxLiveSyncPlaybackRate: 1.5 });
         hls.loadSource(src);
         hls.attachMedia(v);
-        hls.on(window.Hls.Events.ERROR, (_, d) => { if (d.fatal) setStatus('Stream error — retrying…', true); });
+        // Actually recover from fatal errors (the old code only *said* "retrying").
+        hls.on(window.Hls.Events.ERROR, (_, d) => {
+          if (!d.fatal) return;
+          if (d.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+            setStatus('Reconnecting…', false);
+            setTimeout(() => hls.startLoad(), 1500);
+          } else if (d.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+            setStatus('Recovering…', false);
+            hls.recoverMediaError();
+          } else {
+            setStatus('Stream unavailable — is it still running on the Mac?', true);
+            hls.destroy();
+          }
+        });
       } else { setStatus('This browser cannot play the stream.', true); }
     };
     script.onerror = () => setStatus('Could not load player (no internet on this device?).', true);
