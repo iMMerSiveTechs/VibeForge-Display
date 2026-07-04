@@ -83,6 +83,15 @@ final class Discovery: NSObject, ObservableObject, NetServiceBrowserDelegate, Ne
 
     func stop() {
         browser.stop()
+        // NetService.delegate is unowned(unsafe): if we go away with resolves in
+        // flight, a completing resolve would call into a freed delegate → crash.
+        for service in resolving { service.delegate = nil; service.stop() }
+        resolving.removeAll()
+    }
+
+    deinit {
+        browser.stop()
+        for service in resolving { service.delegate = nil; service.stop() }
     }
 
     // MARK: NetServiceBrowserDelegate
@@ -95,6 +104,9 @@ final class Discovery: NSObject, ObservableObject, NetServiceBrowserDelegate, Ne
 
     func netServiceBrowser(_ browser: NetServiceBrowser, didRemove service: NetService, moreComing: Bool) {
         servers.removeAll { $0.id == service.name }
+        if let stale = resolving.first(where: { $0.name == service.name }) {
+            stale.delegate = nil; stale.stop(); resolving.remove(stale)
+        }
     }
 
     // MARK: NetServiceDelegate

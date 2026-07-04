@@ -358,7 +358,9 @@ struct RouteRow: View {
                     Text("Open on the TV or phone")
                         .font(VFTheme.Typography.headline)
                         .foregroundStyle(VFTheme.Colors.textSecondary)
-                    Text(receiverURL)
+                    // Token redacted on screen (shoulder-surf/photo) — the full
+                    // access URL is only in the QR and the Copy button.
+                    Text(displayURL)
                         .font(VFTheme.Typography.mono)
                         .foregroundStyle(VFTheme.Colors.textPrimary)
                         .textSelection(.enabled)
@@ -399,6 +401,14 @@ struct RouteRow: View {
             .font(VFTheme.Typography.mono)
             .foregroundStyle(VFTheme.Colors.textTertiary)
         }
+    }
+
+    /// The receiver URL with the session token redacted, for on-screen display.
+    private var displayURL: String {
+        guard let r = receiverURL.range(of: "t=") else { return receiverURL }
+        let start = r.upperBound
+        let end = receiverURL[start...].firstIndex(of: "&") ?? receiverURL.endIndex
+        return receiverURL.replacingCharacters(in: start..<end, with: "…")
     }
 
     private func copy() {

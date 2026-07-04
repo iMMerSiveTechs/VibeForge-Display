@@ -13,10 +13,16 @@ extension CGVirtualDisplaySettings: @unchecked Sendable {}
 final class VirtualDisplayService {
     private(set) var configs: [VirtualScreenConfig] = []
     private(set) var activeConfigIDs: Set<UUID> = []
+    /// Creates currently in flight (before activeConfigIDs is populated) so a
+    /// double-click / preset-apply can't build two displays for one config.
+    private var pendingCreateIDs: Set<UUID> = []
     private var activeDisplays: [UUID: CGVirtualDisplay] = [:]
     private let persistence: PersistenceManager
     private let logService: LogService
     private let configsFileName = "virtual_screens.json"
+    /// A single serial queue for the (blocking, private-API) applySettings call —
+    /// so a WindowServer hang can wedge at most ONE thread, not one per attempt.
+    private let applyQueue = DispatchQueue(label: "vibeforge.vdisplay.apply")
 
     // Standard PPI for physical size calculation (pixels to mm)
     private let standardPPI: Double = 110.0
@@ -26,11 +32,14 @@ final class VirtualDisplayService {
         self.logService = logService
         loadConfigs()
 
-        // Black-screen crash guard: a bad virtual-display config can make macOS
-        // go dark, forcing a reboot. If we auto-created on every launch, we could
-        // trap the user in a reboot loop. So we only auto-create when the PREVIOUS
-        // session ended cleanly (a marker file we arm ~20s after a stable launch).
-        // A hard reboot clears the marker, so the next launch comes up safe.
+        // Black-screen crash guard: a bad virtual-display config can make macOS go
+        // dark. We only auto-create when the PREVIOUS session ended cleanly.
+        // Mechanism: the marker file is DELETED at every launch and only re-written
+        // (a) on a clean quit, or (b) ~20s after launch if the app is still alive.
+        // So a crash/black-screen within the first ~20s leaves no marker → next
+        // launch is safe. LIMITATION: a black-screen that occurs AFTER the 20s arm
+        // (marker already written) will re-create the bad display next launch; the
+        // marker is a persisted file and does NOT clear on reboot.
         let lastRunWasStable = persistence.exists(VFConstants.cleanExitMarkerFileName)
         try? persistence.delete(VFConstants.cleanExitMarkerFileName)
         if lastRunWasStable {
@@ -54,9 +63,11 @@ final class VirtualDisplayService {
 
     @discardableResult
     func createDisplay(config: VirtualScreenConfig) async -> Bool {
-        // Re-entrancy: if it's already live, don't build a second one (which would
-        // drop the first and flash the display with a new ID).
-        guard !activeConfigIDs.contains(config.id) else { return true }
+        // Re-entrancy: skip if already live OR a create is already in flight (the
+        // guard on activeConfigIDs alone misses the ~10s window before it's set).
+        guard !activeConfigIDs.contains(config.id), !pendingCreateIDs.contains(config.id) else { return true }
+        pendingCreateIDs.insert(config.id)
+        defer { pendingCreateIDs.remove(config.id) }
         // Build the CGVirtualDisplay descriptor
         let descriptor = CGVirtualDisplayDescriptor()
         descriptor.queue = DispatchQueue.global(qos: .userInitiated)
@@ -147,6 +158,10 @@ final class VirtualDisplayService {
                           detail: config.name)
             return false
         }
+
+        // The config may have been deleted while we awaited applySettings — don't
+        // leave a live display with no config row ("ghost" active screen).
+        guard configs.contains(where: { $0.id == config.id }) else { return false }
 
         // Store the active display
         activeDisplays[config.id] = virtualDisplay
@@ -276,7 +291,9 @@ final class VirtualDisplayService {
             // needs the explicit unsafe opt-out.
             nonisolated(unsafe) var didResume = false
 
-            DispatchQueue.global(qos: .userInitiated).async {
+            // Run the blocking op on the dedicated serial queue so a WindowServer
+            // hang can wedge at most one thread (not one per attempt).
+            applyQueue.async {
                 let result = operation()
                 lock.lock()
                 guard !didResume else { lock.unlock(); return }
@@ -285,6 +302,7 @@ final class VirtualDisplayService {
                 continuation.resume(returning: result)
             }
 
+            // Timeout fires on a DIFFERENT queue so it isn't blocked behind a wedge.
             DispatchQueue.global().asyncAfter(deadline: .now() + seconds) {
                 lock.lock()
                 guard !didResume else { lock.unlock(); return }

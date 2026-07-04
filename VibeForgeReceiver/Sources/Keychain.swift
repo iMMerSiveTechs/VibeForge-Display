@@ -4,17 +4,25 @@ import Security
 /// Minimal Keychain wrapper for the per-host session token — an access
 /// credential belongs in the Keychain rather than UserDefaults.
 enum Keychain {
-    static func set(_ value: String, for account: String) {
+    @discardableResult
+    static func set(_ value: String, for account: String) -> Bool {
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "com.vibeforge.display.receiver",
             kSecAttrAccount as String: account,
         ]
-        SecItemDelete(base as CFDictionary)
+        let data = Data(value.utf8)
+        // Add first; on duplicate, UPDATE in place — never delete-then-add, which
+        // loses the old token if the add fails (locked keychain, etc.).
         var add = base
-        add[kSecValueData as String] = Data(value.utf8)
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(add as CFDictionary, nil)
+        add[kSecValueData as String] = data
+        // ThisDeviceOnly: keep the session token out of encrypted backups/restores.
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let status = SecItemAdd(add as CFDictionary, nil)
+        if status == errSecDuplicateItem {
+            return SecItemUpdate(base as CFDictionary, [kSecValueData as String: data] as CFDictionary) == errSecSuccess
+        }
+        return status == errSecSuccess
     }
 
     static func get(_ account: String) -> String? {
