@@ -12,7 +12,9 @@ enum VFTheme {
 
         static let textPrimary = Color(nsColor: .init(red: 0.93, green: 0.93, blue: 0.95, alpha: 1.0))
         static let textSecondary = Color(nsColor: .init(red: 0.60, green: 0.60, blue: 0.65, alpha: 1.0))
-        static let textTertiary = Color(nsColor: .init(red: 0.40, green: 0.40, blue: 0.45, alpha: 1.0))
+        // Lightened from 0.40 → 0.56 to clear WCAG AA (~4.5:1) on `background`;
+        // it's used pervasively for essential 11pt caption text.
+        static let textTertiary = Color(nsColor: .init(red: 0.56, green: 0.56, blue: 0.60, alpha: 1.0))
 
         static let accent = Color(nsColor: .init(red: 0.35, green: 0.55, blue: 0.90, alpha: 1.0))
         static let accentHover = Color(nsColor: .init(red: 0.45, green: 0.65, blue: 1.0, alpha: 1.0))

@@ -57,12 +57,19 @@ final class SurfaceService {
         return true
     }
 
-    /// Live-applies opacity / always-on-top / target screen to an open window so
-    /// the settings sliders/toggles take effect immediately (not just on reopen).
+    /// Live-applies name / opacity / always-on-top / size / target screen to an
+    /// open window so the settings take effect immediately (not just on reopen).
     private func applyConfigToOpenWindow(_ config: SurfaceConfig) {
         guard let window = windows[config.id] else { return }
+        window.title = config.name
         window.alphaValue = config.opacity
         window.level = config.alwaysOnTop ? .floating : .normal
+        // Resize if the preset size changed (was silently reverted on next drag).
+        if abs(window.frame.width - config.frameWidth) > 1 || abs(window.frame.height - config.frameHeight) > 1 {
+            var frame = window.frame
+            frame.size = NSSize(width: config.frameWidth, height: config.frameHeight)
+            window.setFrame(frame, display: true, animate: true)
+        }
         // Snap to the target screen only if the window isn't already on it — so a
         // continuous opacity/toggle change doesn't keep re-centering the window.
         guard let screenID = config.targetScreenID,

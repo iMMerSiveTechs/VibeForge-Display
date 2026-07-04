@@ -100,6 +100,7 @@ struct SurfacesView: View {
                     .foregroundStyle(VFTheme.Colors.textSecondary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(config.isOpen ? "Hide \(config.name)" : "Show \(config.name)")
         }
         .padding(VFTheme.Spacing.sm)
         .background(isSelected ? VFTheme.Colors.accentSubtle : Color.clear)

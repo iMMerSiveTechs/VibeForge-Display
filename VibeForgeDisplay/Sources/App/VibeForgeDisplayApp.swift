@@ -9,10 +9,11 @@ struct VibeForgeDisplayApp: App {
         MenuBarExtra {
             MenuBarView(appState: appState)
         } label: {
-            Label(
-                "\(appState.screenService.screens.count)",
-                systemImage: VFConstants.MenuBar.iconName
-            )
+            // Custom label so we can open the main window on very first launch —
+            // an LSUIElement app doesn't auto-open its Window scene, which would
+            // otherwise hide onboarding (and its honesty disclosures) forever.
+            MenuBarLabel(activeCount: appState.streamService.streamingRouteIDs.count
+                         + appState.virtualDisplayService.activeConfigIDs.count)
         }
         .menuBarExtraStyle(.window)
 
@@ -29,6 +30,35 @@ struct VibeForgeDisplayApp: App {
             height: VFTheme.Window.defaultHeight
         )
         .windowStyle(.hiddenTitleBar)
+    }
+}
+
+// MARK: - Menu bar label (also the first-launch onboarding opener)
+
+private struct MenuBarLabel: View {
+    let activeCount: Int
+    @Environment(\.openWindow) private var openWindow
+    @AppStorage("vf.onboarded") private var onboarded = false
+    @State private var didOpenForOnboarding = false
+
+    var body: some View {
+        // Show a count only when something is actually active (streams/virtual
+        // screens); a bare physical-screen count read as a meaningless badge.
+        Group {
+            if activeCount > 0 {
+                Label("\(activeCount)", systemImage: VFConstants.MenuBar.iconName)
+            } else {
+                Image(systemName: VFConstants.MenuBar.iconName)
+            }
+        }
+        .onAppear {
+            // The menu-bar label renders at launch even for an accessory app, so
+            // this is our reliable hook to surface the window + onboarding once.
+            guard !onboarded, !didOpenForOnboarding else { return }
+            didOpenForOnboarding = true
+            openWindow(id: "main")
+            NSApplication.shared.activate(ignoringOtherApps: true)
+        }
     }
 }
 

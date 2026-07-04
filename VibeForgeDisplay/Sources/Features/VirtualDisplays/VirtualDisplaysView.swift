@@ -6,6 +6,7 @@ struct VirtualDisplaysView: View {
 
     @State private var showCreateSheet = false
     @State private var editingConfig: VirtualScreenConfig?
+    @State private var showDeactivateAllConfirm = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -31,7 +32,7 @@ struct VirtualDisplaysView: View {
                 Text("Virtual Screens")
                     .font(VFTheme.Typography.largeTitle)
                     .foregroundStyle(VFTheme.Colors.textPrimary)
-                Text("Create virtual displays to extend your desktop beyond hardware limits")
+                Text("Create extra displays your Mac treats as monitors (support varies by Mac model and macOS)")
                     .font(VFTheme.Typography.caption)
                     .foregroundStyle(VFTheme.Colors.textSecondary)
             }
@@ -67,12 +68,19 @@ struct VirtualDisplaysView: View {
             Spacer()
 
             if !virtualDisplayService.activeConfigIDs.isEmpty {
-                Button("Destroy All") {
-                    virtualDisplayService.destroyAll()
+                Button("Deactivate All") {
+                    showDeactivateAllConfirm = true
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .foregroundStyle(VFTheme.Colors.error)
+                .confirmationDialog(
+                    "Deactivate all \(virtualDisplayService.activeConfigIDs.count) virtual screen(s)? Windows on them return to your main display and any routes streaming them stop. (Your saved configs are kept.)",
+                    isPresented: $showDeactivateAllConfirm, titleVisibility: .visible
+                ) {
+                    Button("Deactivate All", role: .destructive) { virtualDisplayService.destroyAll() }
+                    Button("Cancel", role: .cancel) { }
+                }
             }
         }
         .padding(.horizontal, VFTheme.Spacing.xl)

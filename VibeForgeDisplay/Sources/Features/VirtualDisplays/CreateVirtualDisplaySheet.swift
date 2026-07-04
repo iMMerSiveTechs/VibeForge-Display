@@ -113,6 +113,19 @@ struct CreateVirtualDisplaySheet: View {
             .background(VFTheme.Colors.accentSubtle)
             .clipShape(RoundedRectangle(cornerRadius: VFTheme.Radius.md))
 
+            // Honest caveat — the code itself guards against this; users deserve it too.
+            HStack(alignment: .top, spacing: VFTheme.Spacing.sm) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(VFTheme.Colors.warning)
+                Text("Virtual screens use an unsupported macOS capability. Support varies by Mac model and macOS version, and a bad configuration can briefly black-screen your Mac (a restart fixes it — VibeForge then starts in safe mode). If you only need a wireless side-screen, a Surface route is the safer choice.")
+                    .font(VFTheme.Typography.caption)
+                    .foregroundStyle(VFTheme.Colors.textTertiary)
+            }
+            .padding(VFTheme.Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(VFTheme.Colors.warning.opacity(0.10))
+            .clipShape(RoundedRectangle(cornerRadius: VFTheme.Radius.md))
+
             // Actions
             HStack {
                 Spacer()

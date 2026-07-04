@@ -45,7 +45,8 @@ struct WallPresetsBar: View {
         .sheet(isPresented: $showSaveSheet) {
             SaveWallPresetSheet(wallPresetService: wallPresetService)
         }
-        .alert("Preset applied", isPresented: $showReport) {
+        .alert((wallPresetService.lastApplyReport?.failures.isEmpty ?? true) ? "Preset applied" : "Applied with issues",
+               isPresented: $showReport) {
             Button("OK") { wallPresetService.clearApplyReport() }
         } message: {
             if let r = wallPresetService.lastApplyReport {

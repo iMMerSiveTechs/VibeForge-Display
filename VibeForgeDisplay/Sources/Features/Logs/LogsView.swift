@@ -10,6 +10,7 @@ struct LogsView: View {
 
     @State private var selectedCategory: LogEntry.Category?
     @State private var searchText = ""
+    @State private var showClearConfirm = false
 
     var filteredEntries: [LogEntry] {
         var entries = logService.entries
@@ -49,11 +50,16 @@ struct LogsView: View {
                     .foregroundStyle(VFTheme.Colors.textSecondary)
             }
             Spacer()
-            Button(action: { logService.clear() }) {
+            Button(action: { showClearConfirm = true }) {
                 Label("Clear", systemImage: "trash")
                     .font(VFTheme.Typography.caption)
             }
             .buttonStyle(.bordered)
+            .confirmationDialog("Clear the event log? This is the app's only diagnostic trail.",
+                                isPresented: $showClearConfirm, titleVisibility: .visible) {
+                Button("Clear Log", role: .destructive) { logService.clear() }
+                Button("Cancel", role: .cancel) { }
+            }
         }
         .padding(VFTheme.Spacing.xl)
     }
