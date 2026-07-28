@@ -40,6 +40,16 @@ If you have an M1 Mac that only supports 1 external display, VibeForge Display c
 - Borderless, resizable windows with opacity control and always-on-top
 - Widget data persists across app restarts
 
+### Routes
+- Stream virtual screens to iPads, tablets, TVs, and browsers
+- Configure protocol, port, quality, and max FPS per route
+- Optional input relay (touch/keyboard back to the Mac)
+- Live client and route status at a glance
+
+### Quick Setup
+- One-click layouts and presets that chain Virtual Screens + Routes together
+- Gets a multi-display + streaming setup running without visiting each tab
+
 ### Logs
 - Track screen changes, virtual display events, and system activity
 - Diagnostics cards showing system health at a glance
@@ -147,13 +157,15 @@ VibeForgeDisplay/
 │   ├── App/                          # App entry point, state, constants
 │   ├── Bridge/                       # Objective-C bridging header for CGVirtualDisplay
 │   ├── Core/
-│   │   ├── Models/                   # ScreenInfo, Mode, VirtualScreenConfig, etc.
-│   │   ├── Services/                 # Screen, Mode, Surface, VirtualDisplay, Log services
+│   │   ├── Models/                   # ScreenInfo, Mode, VirtualScreenConfig, RouteConfig, etc.
+│   │   ├── Services/                 # Screen, Mode, Surface, VirtualDisplay, Route, Log services
 │   │   └── Persistence/             # JSON file persistence
 │   ├── Features/
 │   │   ├── MenuBar/                  # Menu bar dropdown
 │   │   ├── Screens/                  # Physical display inspector
 │   │   ├── VirtualDisplays/         # Virtual screen creation and management
+│   │   ├── Routes/                   # Stream virtual screens to other devices
+│   │   ├── QuickSetup/               # One-click layouts and presets
 │   │   ├── Modes/                    # Profile save/load/delete
 │   │   ├── Surfaces/                # Utility workspace windows + widgets
 │   │   └── Logs/                    # Diagnostics and event log
@@ -185,7 +197,6 @@ VibeForge Display uses macOS's `CGVirtualDisplay` API to create virtual monitors
 - Virtual screens are created via macOS display APIs, not hardware drivers
 - Whether they bypass M1's 1-display limit depends on your specific macOS version
 - This is NOT a hardware hack — it works within macOS capabilities
-- Streaming to devices (Routes) is planned for a future update
 
 ---
 
@@ -204,11 +215,11 @@ VibeForge Display uses macOS's `CGVirtualDisplay` API to create virtual monitors
 - [x] Auto-create on launch
 - [x] Updated navigation and diagnostics
 
-### Slice 2 (Planned)
-- [ ] Local streaming of virtual screens / Surfaces
-- [ ] Receiver prototype (macOS)
-- [ ] Mode presets (Desk, TV, iPad, Dual TV)
-- [ ] Streaming stats and quality presets
+### Slice 2 (Done)
+- [x] Routes — stream virtual screens / Surfaces to iPads, tablets, TVs, and browsers
+- [x] Configurable protocol, port, quality, and max FPS per route
+- [x] Optional input relay back to the Mac
+- [x] Quick Setup — one-click layouts and presets
 
 ### Slice 3 (Future)
 - [ ] iPad/tvOS receiver
