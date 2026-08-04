@@ -6,6 +6,7 @@ struct CreateVirtualDisplaySheet: View {
 
     @State private var name = ""
     @State private var selectedPreset: VirtualScreenPreset = .hd1080
+    @State private var selectedCategory: PresetCategory = .standard
     @State private var customWidth = "1920"
     @State private var customHeight = "1080"
     @State private var refreshRate = 60.0
@@ -56,9 +57,29 @@ struct CreateVirtualDisplaySheet: View {
                             .foregroundStyle(VFTheme.Colors.textTertiary)
                     }
                 } else {
-                    HStack(spacing: VFTheme.Spacing.sm) {
-                        ForEach(VirtualScreenPreset.allCases) { preset in
-                            presetButton(preset)
+                    // Category tabs + presets within selected category (15 presets
+                    // across 5 categories no longer fit in one row).
+                    VStack(spacing: VFTheme.Spacing.sm) {
+                        Picker("Category", selection: $selectedCategory) {
+                            ForEach(PresetCategory.allCases) { cat in
+                                Label(cat.rawValue, systemImage: cat.icon).tag(cat)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        // Without this, switching categories leaves `selectedPreset`
+                        // pointing at a preset from the PREVIOUS category — no chip
+                        // shows selected, yet Create would silently use it anyway.
+                        .onChange(of: selectedCategory) { _, newCategory in
+                            if let first = VirtualScreenPreset.presets(for: newCategory).first {
+                                selectedPreset = first
+                            }
+                        }
+
+                        let presets = VirtualScreenPreset.presets(for: selectedCategory)
+                        HStack(spacing: VFTheme.Spacing.sm) {
+                            ForEach(presets) { preset in
+                                presetButton(preset)
+                            }
                         }
                     }
                 }

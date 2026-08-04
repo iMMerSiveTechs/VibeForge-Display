@@ -99,6 +99,11 @@ struct MainWindowView: View {
                 virtualDisplayService: appState.virtualDisplayService,
                 logService: appState.logService
             )
+        case .quickSetup:
+            QuickSetupView(
+                virtualDisplayService: appState.virtualDisplayService,
+                logService: appState.logService
+            )
         case .modes:
             ModesView(
                 modeService: appState.modeService,

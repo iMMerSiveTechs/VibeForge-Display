@@ -18,6 +18,7 @@ final class AppState {
     enum SidebarTab: String, CaseIterable, Identifiable {
         case screens = "Screens"
         case virtualScreens = "Virtual Screens"
+        case quickSetup = "Quick Setup"
         case modes = "Modes"
         case surfaces = "Surfaces"
         case routes = "Routes"
@@ -30,6 +31,7 @@ final class AppState {
             switch self {
             case .screens: return "display"
             case .virtualScreens: return "plus.display"
+            case .quickSetup: return "wand.and.stars"
             case .modes: return "slider.horizontal.3"
             case .surfaces: return "rectangle.on.rectangle.angled"
             case .routes: return "point.3.connected.trianglepath.dotted"
