@@ -8,6 +8,20 @@ extension CGVirtualDisplayDescriptor: @unchecked Sendable {}
 extension CGVirtualDisplay: @unchecked Sendable {}
 extension CGVirtualDisplaySettings: @unchecked Sendable {}
 
+private final class TimeoutResumeState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var didResume = false
+
+    func claimResume() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard !didResume else { return false }
+        didResume = true
+        return true
+    }
+}
+
 @MainActor
 @Observable
 final class VirtualDisplayService {
@@ -142,7 +156,7 @@ final class VirtualDisplayService {
         let displayRef = virtualDisplay
         let settingsRef = settings
         let applied = await withTimeout(seconds: 10) {
-            displayRef.applySettings(settingsRef)
+            displayRef.apply(settingsRef)
         }
 
         guard applied else {
@@ -295,29 +309,22 @@ final class VirtualDisplayService {
 
     private func withTimeout(seconds: Double, operation: @escaping @Sendable () -> Bool) async -> Bool {
         await withCheckedContinuation { continuation in
-            let lock = NSLock()
-            // Guarded by `lock`; the compiler's syntactic @Sendable-capture rule
-            // needs the explicit unsafe opt-out.
-            nonisolated(unsafe) var didResume = false
+            let state = TimeoutResumeState()
 
             // Run the blocking op on the dedicated serial queue so a WindowServer
             // hang can wedge at most one thread (not one per attempt).
             applyQueue.async {
                 let result = operation()
-                lock.lock()
-                guard !didResume else { lock.unlock(); return }
-                didResume = true
-                lock.unlock()
-                continuation.resume(returning: result)
+                if state.claimResume() {
+                    continuation.resume(returning: result)
+                }
             }
 
             // Timeout fires on a DIFFERENT queue so it isn't blocked behind a wedge.
             DispatchQueue.global().asyncAfter(deadline: .now() + seconds) {
-                lock.lock()
-                guard !didResume else { lock.unlock(); return }
-                didResume = true
-                lock.unlock()
-                continuation.resume(returning: false)
+                if state.claimResume() {
+                    continuation.resume(returning: false)
+                }
             }
         }
     }
