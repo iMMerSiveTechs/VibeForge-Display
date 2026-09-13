@@ -138,10 +138,14 @@ final class SurfaceService {
     private func loadConfigs() {
         guard persistence.exists(VFConstants.surfacesFileName) else { return }
         do {
-            configs = try persistence.load([SurfaceConfig].self, from: VFConstants.surfacesFileName)
+            let (loaded, dropped) = try persistence.loadArray([SurfaceConfig].self, from: VFConstants.surfacesFileName)
+            configs = loaded
             // Mark all as closed on launch
             for i in configs.indices { configs[i].isOpen = false }
             logService.log(.surface, "Loaded \(configs.count) surface config(s)")
+            if dropped > 0 {
+                logService.log(.error, "Skipped \(dropped) corrupt surface config(s) on load")
+            }
         } catch {
             logService.log(.error, "Failed to load surface configs", detail: error.localizedDescription)
         }
@@ -160,8 +164,11 @@ final class SurfaceService {
     private func loadWidgetStorage() {
         guard persistence.exists(widgetStorageFileName) else { return }
         do {
-            let storages = try persistence.load([SurfaceWidgetStorage].self, from: widgetStorageFileName)
+            let (storages, dropped) = try persistence.loadArray([SurfaceWidgetStorage].self, from: widgetStorageFileName)
             widgetStorage = Dictionary(storages.map { ($0.surfaceID, $0) }, uniquingKeysWith: { _, latest in latest })
+            if dropped > 0 {
+                logService.log(.error, "Skipped \(dropped) corrupt widget data record(s) on load")
+            }
         } catch {
             logService.log(.error, "Failed to load widget data", detail: error.localizedDescription)
         }

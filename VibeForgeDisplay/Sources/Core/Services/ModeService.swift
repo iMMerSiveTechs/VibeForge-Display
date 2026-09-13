@@ -96,8 +96,12 @@ final class ModeService {
     private func loadModes() {
         guard persistence.exists(VFConstants.modesFileName) else { return }
         do {
-            modes = try persistence.load([Mode].self, from: VFConstants.modesFileName)
+            let (loaded, dropped) = try persistence.loadArray([Mode].self, from: VFConstants.modesFileName)
+            modes = loaded
             logService.log(.mode, "Loaded \(modes.count) mode(s)")
+            if dropped > 0 {
+                logService.log(.error, "Skipped \(dropped) corrupt mode(s) on load")
+            }
         } catch {
             logService.log(.error, "Failed to load modes", detail: error.localizedDescription)
         }

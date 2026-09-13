@@ -391,8 +391,12 @@ final class RouteService {
     private func loadRoutes() {
         guard persistence.exists(routesFileName) else { return }
         do {
-            routes = try persistence.load([RouteConfig].self, from: routesFileName)
+            let (loaded, dropped) = try persistence.loadArray([RouteConfig].self, from: routesFileName)
+            routes = loaded
             logService.log(.route, "Loaded \(routes.count) route(s)")
+            if dropped > 0 {
+                logService.log(.error, "Skipped \(dropped) corrupt route(s) on load")
+            }
         } catch {
             logService.log(.error, "Failed to load routes", detail: error.localizedDescription)
         }

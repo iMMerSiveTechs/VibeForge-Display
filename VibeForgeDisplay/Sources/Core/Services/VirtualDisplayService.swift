@@ -185,8 +185,12 @@ final class VirtualDisplayService {
     private func loadConfigs() {
         guard persistence.exists(configsFileName) else { return }
         do {
-            configs = try persistence.load([VirtualScreenConfig].self, from: configsFileName)
+            let (loaded, dropped) = try persistence.loadArray([VirtualScreenConfig].self, from: configsFileName)
+            configs = loaded
             logService.log(.screen, "Loaded \(configs.count) virtual screen config(s)")
+            if dropped > 0 {
+                logService.log(.error, "Skipped \(dropped) corrupt virtual screen config(s) on load")
+            }
         } catch {
             logService.log(.error, "Failed to load virtual screen configs",
                           detail: error.localizedDescription)

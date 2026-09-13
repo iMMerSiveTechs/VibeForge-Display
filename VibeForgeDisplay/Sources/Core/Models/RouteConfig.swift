@@ -4,14 +4,14 @@ import Foundation
 /// Virtual Display -> Capture -> Encode -> Stream -> Device (iPad, tablet, browser)
 struct RouteConfig: Identifiable, Codable, Sendable {
     let id: UUID
-    var name: String
+    var name: String = "New Route"
     var sourceDisplayConfigID: UUID?    // links to VirtualScreenConfig.id
-    var protocol_: StreamProtocol
-    var port: UInt16
-    var quality: StreamQuality
-    var maxFPS: Int
-    var inputRelayEnabled: Bool         // relay touch/keyboard back to Mac
-    var autoStartOnLaunch: Bool
+    var protocol_: StreamProtocol = .mjpeg
+    var port: UInt16 = 7867
+    var quality: StreamQuality = .balanced
+    var maxFPS: Int = 30
+    var inputRelayEnabled: Bool = true  // relay touch/keyboard back to Mac
+    var autoStartOnLaunch: Bool = false
     var createdAt: Date
 
     init(

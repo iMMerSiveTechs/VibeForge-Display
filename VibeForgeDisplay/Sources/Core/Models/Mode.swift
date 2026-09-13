@@ -5,10 +5,10 @@ struct Mode: Identifiable, Codable, Sendable {
     var name: String
     var createdAt: Date
     var updatedAt: Date
-    var notes: String
+    var notes: String = ""
     var screens: [ScreenInfo]
     var preferredMainDisplayID: UInt32?
-    var surfacePreferences: [SurfaceConfig]
+    var surfacePreferences: [SurfaceConfig] = []
 
     init(
         name: String,
