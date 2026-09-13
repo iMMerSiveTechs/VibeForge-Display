@@ -132,7 +132,8 @@ In Xcode:
 
 ### Troubleshooting
 
-- **"VibeForgeDisplay" cannot be opened because the developer cannot be verified**: Right-click the app > Open > click Open again
+- **"VibeForgeDisplay" cannot be opened because the developer cannot be verified**: Go to System Settings > Privacy & Security, scroll to the bottom, and click "Open Anyway" (the old right-click → Open trick was removed in macOS Sequoia). Since you build it yourself in Xcode, you normally won't hit this.
+- **Screen Recording permission prompt**: Routes (streaming) needs Screen Recording permission. Grant it in System Settings > Privacy & Security > Screen Recording, then relaunch the app.
 - **Build errors about signing**: Make sure you selected a Team in Signing & Capabilities
 - **No menu bar icon**: The app runs as a menu bar app (no dock icon). Look in the top-right of your screen
 - **Virtual display doesn't appear**: Make sure you're running macOS 14+ (check Apple menu > About This Mac)
@@ -185,7 +186,44 @@ VibeForge Display uses macOS's `CGVirtualDisplay` API to create virtual monitors
 - Virtual screens are created via macOS display APIs, not hardware drivers
 - Whether they bypass M1's 1-display limit depends on your specific macOS version
 - This is NOT a hardware hack — it works within macOS capabilities
-- Streaming to devices (Routes) is planned for a future update
+- **Routes streams over VibeForge's own transport (LL-HLS), not Apple AirPlay.** AirPlay's sender protocol is closed and single-target; no third-party app can emit AirPlay to multiple TVs. Routes achieves the same result (wireless, different content per TV) a different way.
+
+---
+
+## Routes — streaming a screen to a TV
+
+The **Routes** tab streams a virtual screen over your local network so any TV can show it:
+
+1. Create a **Virtual Screen** (Virtual Screens tab).
+2. In **Routes**, add a route pointing at that virtual screen, pick a quality, and press **Start**.
+3. On the TV/phone, either open the shown link in a browser or scan the QR code.
+
+Two kinds of receiver:
+- **Any browser device** (phones, laptops, smart TVs, Fire/Google TV sticks): just open the link — nothing to install.
+- **Apple TV** (no browser): install the **VibeForge Receiver** tvOS app (below). It auto-finds your Mac via Bonjour and plays the stream with AVPlayer.
+
+### Building the Apple TV receiver
+
+The tvOS receiver is a second target in the same project.
+
+1. Run `xcodegen generate` (it now creates both the Mac app and `VibeForge Receiver`).
+2. In Xcode, select the **VibeForge Receiver** scheme and your Apple TV as the run destination (pair the Apple TV via Xcode → Devices, or run in the tvOS Simulator first).
+3. Set your signing Team on the receiver target (needs an Apple Developer account for install on real Apple TV hardware).
+4. Run. On the Apple TV, pick your Mac, then the stream.
+
+> Requires the Mac and Apple TV on the same Wi-Fi/LAN. The receiver talks plain HTTP on the local network (allowed via `NSAllowsLocalNetworking`).
+
+### Security model
+
+Streams carry screen contents, so access is gated:
+
+- **Per-session token** — on launch the Mac generates a high-entropy token (CSPRNG). *Every* data endpoint (`/t/<token>/streams.json`, `/t/<token>/s/<key>/…`) requires it; without it the server returns 403. The receiver shell page and the pairing endpoint are the only open paths, and neither exposes screen data.
+- **Browser receivers** get the token embedded in the QR/link — nothing to type.
+- **Apple TV** pairs with a **6-digit PIN** shown on the Mac (Routes → “Pair Apple TV”). The PIN is one-time-use, expires after 2 minutes, and locks out after 5 wrong attempts; a correct PIN is exchanged for the session token, which the receiver stores until the Mac restarts.
+- **No wildcard CORS**, and the server rejects requests whose `Host` isn’t an IP/localhost/`.local` — blocking DNS-rebinding attempts from a malicious website.
+- Stream keys are CSPRNG identifiers (not the credential); the token in URLs is redacted from logs.
+
+Limitation: transport is plain HTTP on the LAN (required for `.local`/AVPlayer). Anyone you show the QR/PIN to can view that session’s streams. Don’t run Routes on a network where that matters without treating the QR/PIN as a password.
 
 ---
 
@@ -201,19 +239,26 @@ VibeForge Display uses macOS's `CGVirtualDisplay` API to create virtual monitors
 ### Slice 1.5 (Done)
 - [x] Virtual Screen creation via CGVirtualDisplay
 - [x] Resolution presets (720p to 4K)
-- [x] Auto-create on launch
-- [x] Updated navigation and diagnostics
+- [x] Auto-create on launch (with black-screen crash guard)
 
-### Slice 2 (Planned)
-- [ ] Local streaming of virtual screens / Surfaces
-- [ ] Receiver prototype (macOS)
-- [ ] Mode presets (Desk, TV, iPad, Dual TV)
-- [ ] Streaming stats and quality presets
+### Slice 2 (Done)
+- [x] Local streaming of virtual screens (LL-HLS over LAN)
+- [x] Browser (web) receiver — any device with a browser
+- [x] Apple TV (tvOS) receiver app with Bonjour discovery
+- [x] Quality presets (Low / Balanced / High)
+- [x] Per-route live stats (fps / frames / uptime)
+- [x] Window / Surface as a stream source (App-Store-safe, no private API)
+- [x] Wall Presets — snapshot a whole multi-TV layout, restore in one tap
+- [x] Auto-start routes on launch (safe-mode aware)
+- [x] Security: per-session token gating, PIN pairing, DNS-rebind defense
+- [x] App icon + first-run onboarding
 
 ### Slice 3 (Future)
-- [ ] iPad/tvOS receiver
-- [ ] Expanded Surface modules
-- [ ] Automation/hotkeys
+- [ ] WebRTC transport for sub-second latency
+- [ ] Audio streaming
+- [ ] Self-hosted hls.js (drop CDN) + SRI
+- [ ] Global hotkeys / Shortcuts automation
+- [ ] Signed + notarized direct-download build
 
 ---
 

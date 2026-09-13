@@ -1,0 +1,18 @@
+{
+  "images": [
+    {
+      "idiom": "tv",
+      "scale": "1x",
+      "filename": "appicon_400x240.png"
+    },
+    {
+      "idiom": "tv",
+      "scale": "2x",
+      "filename": "appicon_800x480.png"
+    }
+  ],
+  "info": {
+    "author": "vibeforge",
+    "version": 1
+  }
+}
