@@ -48,21 +48,27 @@ final class VirtualDisplayService {
 
         // Black-screen crash guard: a bad virtual-display config can make macOS go
         // dark. We only auto-create when the PREVIOUS session ended cleanly.
-        // Mechanism: the marker file is DELETED at every launch and only re-written
-        // (a) on a clean quit, or (b) ~20s after launch if the app is still alive.
-        // So a crash/black-screen within the first ~20s leaves no marker → next
-        // launch is safe. LIMITATION: a black-screen that occurs AFTER the 20s arm
-        // (marker already written) will re-create the bad display next launch; the
-        // marker is a persisted file and does NOT clear on reboot.
+        // Mechanism: the marker file is DELETED at every launch and re-written
+        // (a) on a clean quit, or (b) ~20s after launch if the app is still alive
+        // AND this run did not auto-create anything. The marker is a persisted
+        // file and does NOT clear on reboot.
         let lastRunWasStable = persistence.exists(VFConstants.cleanExitMarkerFileName)
         try? persistence.delete(VFConstants.cleanExitMarkerFileName)
+        let didAutoCreate = lastRunWasStable && configs.contains(where: \.autoCreateOnLaunch)
         if lastRunWasStable {
             autoCreateDisplays()
         } else if configs.contains(where: \.autoCreateOnLaunch) {
             logService.log(.system, "Safe mode: skipped auto-creating virtual screens",
                            detail: "Last session didn't exit cleanly. Activate manually once your display is stable.")
         }
-        armStableRunMarker()
+        // Arm the survived-20s marker ONLY when this run created no virtual screen
+        // of its own accord. A bad config blacks the screen within a few seconds
+        // while the app itself keeps running perfectly happily, so an unconditional
+        // timer fires, records "stable", and re-creates the same display on the next
+        // launch — defeating this guard in precisely the case it exists for, since a
+        // user who cannot see the screen will not quit cleanly inside 20s. When we
+        // did auto-create, only a clean quit counts as proof the run was survivable.
+        if !didAutoCreate { armStableRunMarker() }
     }
 
     /// Marks this run as stable after it has survived ~20s, so the next launch may auto-create.
