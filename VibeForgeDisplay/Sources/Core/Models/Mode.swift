@@ -5,10 +5,12 @@ struct Mode: Identifiable, Codable, Sendable {
     var name: String
     var createdAt: Date
     var updatedAt: Date
-    var notes: String
+    // Defaults live on the properties, not just on `init`, so Codable's synthesized
+    // decoder falls back instead of throwing when a saved file predates a field.
+    var notes: String = ""
     var screens: [ScreenInfo]
     var preferredMainDisplayID: UInt32?
-    var surfacePreferences: [SurfaceConfig]
+    var surfacePreferences: [SurfaceConfig] = []
 
     init(
         name: String,

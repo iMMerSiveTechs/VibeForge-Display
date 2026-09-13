@@ -118,8 +118,13 @@ final class WallPresetService {
     private func load() {
         guard persistence.exists(VFConstants.wallPresetsFileName) else { return }
         do {
-            presets = try persistence.load([WallPreset].self, from: VFConstants.wallPresetsFileName)
+            let (loaded, dropped) = try persistence.loadArray([WallPreset].self, from: VFConstants.wallPresetsFileName)
+            presets = loaded
             logService.log(.system, "Loaded \(presets.count) wall preset(s)")
+            if dropped > 0 {
+                logService.log(.error, "Skipped \(dropped) unreadable wall preset(s)",
+                               detail: "Kept a copy of the original file alongside it.")
+            }
         } catch {
             logService.log(.error, "Failed to load wall presets", detail: error.localizedDescription)
         }

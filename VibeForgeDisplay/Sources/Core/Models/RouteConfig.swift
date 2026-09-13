@@ -18,13 +18,15 @@ enum RouteSourceKind: String, Codable, Sendable, CaseIterable, Identifiable {
 struct RouteConfig: Identifiable, Codable, Sendable {
     let id: UUID
     var name: String
-    var sourceKind: RouteSourceKind
+    // Defaults live on the properties, not just on `init`, so Codable's synthesized
+    // decoder falls back instead of throwing when a saved file predates a field.
+    var sourceKind: RouteSourceKind = .virtualScreen
     /// Id of the source: a VirtualScreenConfig.id or a SurfaceConfig.id per `sourceKind`.
     var sourceID: UUID
-    var quality: StreamQuality
+    var quality: StreamQuality = .balanced
     /// Stable, URL-safe key used in stream paths (e.g. /s/<streamKey>/media.m3u8).
     var streamKey: String
-    var autoStart: Bool
+    var autoStart: Bool = false
     var createdAt: Date
 
     init(

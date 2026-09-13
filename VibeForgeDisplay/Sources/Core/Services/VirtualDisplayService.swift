@@ -252,7 +252,11 @@ final class VirtualDisplayService {
     private func loadConfigs() {
         guard persistence.exists(configsFileName) else { return }
         do {
-            let loaded = try persistence.load([VirtualScreenConfig].self, from: configsFileName)
+            let (loaded, dropped) = try persistence.loadArray([VirtualScreenConfig].self, from: configsFileName)
+            if dropped > 0 {
+                logService.log(.error, "Skipped \(dropped) unreadable virtual screen config(s)",
+                               detail: "Kept a copy of the original file alongside it.")
+            }
             // Sanitize: a hand-edited or corrupt file could carry a negative or
             // absurd width/height, and `UInt32(config.width)` in createDisplay
             // TRAPS on out-of-range Int. Clamp to a sane display range up front.
