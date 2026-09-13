@@ -295,14 +295,14 @@ final class HLSServer {
         }
     }
 
-    private static func requestLine(_ header: String) -> (method: String, path: String) {
+    nonisolated private static func requestLine(_ header: String) -> (method: String, path: String) {
         guard let firstLine = header.split(separator: "\r\n").first else { return ("GET", "/") }
         let parts = firstLine.split(separator: " ")
         guard parts.count >= 2 else { return ("GET", "/") }
         return (String(parts[0]), String(parts[1]))
     }
 
-    private static func headerValue(_ name: String, in header: String) -> String? {
+    nonisolated private static func headerValue(_ name: String, in header: String) -> String? {
         let lower = name.lowercased() + ":"
         for line in header.split(separator: "\r\n") {
             if line.lowercased().hasPrefix(lower) {
@@ -316,7 +316,7 @@ final class HLSServer {
     /// name (used by the Apple TV via Bonjour). A DNS-rebinding attack reaches us
     /// through an attacker-controlled *public domain* Host — which is neither an IP
     /// literal nor `.local` — so we reject those.
-    private static func isAllowedHost(_ hostHeader: String?) -> Bool {
+    nonisolated private static func isAllowedHost(_ hostHeader: String?) -> Bool {
         guard let raw = hostHeader, !raw.isEmpty else { return false }
         // Strip a trailing :port (we don't serve on bracketed IPv6 literals).
         let host = (raw.split(separator: ":").first.map(String.init) ?? raw).lowercased()
@@ -330,7 +330,7 @@ final class HLSServer {
         return false
     }
 
-    private static func queryParam(_ name: String, in path: String) -> String? {
+    nonisolated private static func queryParam(_ name: String, in path: String) -> String? {
         guard let q = path.split(separator: "?", maxSplits: 1).dropFirst().first else { return nil }
         for pair in q.split(separator: "&") {
             let kv = pair.split(separator: "=", maxSplits: 1)

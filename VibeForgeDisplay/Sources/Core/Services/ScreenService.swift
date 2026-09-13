@@ -9,11 +9,12 @@ final class ScreenService {
     private(set) var screens: [ScreenInfo] = []
     private(set) var isEnumerating = false
     private let logService: LogService
-    private var observerToken: NSObjectProtocol?
-    private var refreshTask: Task<Void, Never>?
+    // Also touched by the (nonisolated) deinit, so kept out of main-actor isolation.
+    @ObservationIgnored nonisolated(unsafe) private var observerToken: NSObjectProtocol?
+    @ObservationIgnored nonisolated(unsafe) private var refreshTask: Task<Void, Never>?
 
     // Capture-free C thunk (must be a stable reference for register+remove).
-    private static let reconfigCallback: CGDisplayReconfigurationCallBack = { _, _, _ in
+    nonisolated private static let reconfigCallback: CGDisplayReconfigurationCallBack = { _, _, _ in
         Task { @MainActor in
             NotificationCenter.default.post(name: .screenConfigurationDidChange, object: nil)
         }
