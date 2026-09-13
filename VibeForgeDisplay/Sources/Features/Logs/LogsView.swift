@@ -201,6 +201,7 @@ struct LogsView: View {
         case .screen: return VFTheme.Colors.accent
         case .mode: return VFTheme.Colors.success
         case .surface: return VFTheme.Colors.warning
+        case .route: return VFTheme.Colors.textPrimary
         case .system: return VFTheme.Colors.textSecondary
         case .error: return VFTheme.Colors.error
         }

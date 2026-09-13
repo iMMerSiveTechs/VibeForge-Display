@@ -100,7 +100,7 @@ final class VirtualDisplayService {
         let displayRef = virtualDisplay
         let settingsRef = settings
         let applied = await withTimeout(seconds: 10) {
-            displayRef.applySettings(settingsRef)
+            displayRef.apply(settingsRef)
         }
 
         guard applied else {
