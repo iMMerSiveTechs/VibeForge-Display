@@ -18,13 +18,16 @@ enum RouteSourceKind: String, Codable, Sendable, CaseIterable, Identifiable {
 struct RouteConfig: Identifiable, Codable, Sendable {
     let id: UUID
     var name: String
-    var sourceKind: RouteSourceKind
+    // Defaults for fields an older saved route may lack. The custom init(from:)
+    // below applies them; synthesized Decodable ignores property defaults and
+    // would throw keyNotFound instead.
+    var sourceKind: RouteSourceKind = .virtualScreen
     /// Id of the source: a VirtualScreenConfig.id or a SurfaceConfig.id per `sourceKind`.
     var sourceID: UUID
-    var quality: StreamQuality
+    var quality: StreamQuality = .balanced
     /// Stable, URL-safe key used in stream paths (e.g. /s/<streamKey>/media.m3u8).
     var streamKey: String
-    var autoStart: Bool
+    var autoStart: Bool = false
     var createdAt: Date
 
     init(
@@ -49,6 +52,21 @@ struct RouteConfig: Identifiable, Codable, Sendable {
     /// the server gates all data endpoints behind the session token (SessionSecurity).
     private static func makeStreamKey() -> String {
         SecureRandom.token(byteCount: 12)
+    }
+}
+
+extension RouteConfig {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        sourceID = try c.decode(UUID.self, forKey: .sourceID)
+        streamKey = try c.decode(String.self, forKey: .streamKey)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        // A key missing from an older file keeps the property default.
+        if let v = try c.decodeIfPresent(RouteSourceKind.self, forKey: .sourceKind) { sourceKind = v }
+        if let v = try c.decodeIfPresent(StreamQuality.self, forKey: .quality) { quality = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .autoStart) { autoStart = v }
     }
 }
 

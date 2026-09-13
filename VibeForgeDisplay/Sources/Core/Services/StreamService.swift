@@ -268,8 +268,13 @@ final class StreamService {
     private func loadRoutes() {
         guard persistence.exists(VFConstants.routesFileName) else { return }
         do {
-            routes = try persistence.load([RouteConfig].self, from: VFConstants.routesFileName)
+            let (loaded, dropped) = try persistence.loadArray([RouteConfig].self, from: VFConstants.routesFileName)
+            routes = loaded
             logService.log(.system, "Loaded \(routes.count) route(s)")
+            if dropped > 0 {
+                logService.log(.error, "Skipped \(dropped) unreadable route(s)",
+                               detail: "Kept a copy of the original file alongside it.")
+            }
         } catch {
             logService.log(.error, "Failed to load routes", detail: error.localizedDescription)
         }
