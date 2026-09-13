@@ -322,12 +322,21 @@ final class HLSServer {
         let host = (raw.split(separator: ":").first.map(String.init) ?? raw).lowercased()
         if host == "localhost" { return true }
         if host.hasSuffix(".local") { return true }
-        // IPv4 literal: 4 numeric octets.
+        // IPv4 literal: 4 octets, each 0-255. `Character.isNumber` matches any
+        // Unicode decimal digit (e.g. fullwidth "１２７"), and an unbounded digit
+        // run would accept "999.999.999.999" — neither is a real IP literal, so
+        // require ASCII digits and range-check via Int(), which only parses ASCII.
         let octets = host.split(separator: ".")
-        if octets.count == 4, octets.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }) {
+        if octets.count == 4, octets.allSatisfy(isValidIPv4Octet) {
             return true
         }
         return false
+    }
+
+    nonisolated private static func isValidIPv4Octet(_ s: Substring) -> Bool {
+        guard (1...3).contains(s.count), s.allSatisfy({ $0.isASCII && $0.isNumber }),
+              let n = Int(s) else { return false }
+        return n <= 255
     }
 
     nonisolated private static func queryParam(_ name: String, in path: String) -> String? {
