@@ -15,7 +15,7 @@ enum WebReceiver {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; media-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; connect-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; media-src 'self' blob:; worker-src 'self' blob:; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; connect-src 'self'">
 <title>VibeForge Display — Receiver</title>
 <style>
   :root { color-scheme: dark; }
