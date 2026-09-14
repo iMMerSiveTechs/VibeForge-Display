@@ -1,4 +1,5 @@
 import SwiftUI
+import Darwin
 
 @MainActor
 @Observable
@@ -86,6 +87,7 @@ final class AppState {
         logService.log(.system, "VibeForge Display launched", detail: "v\(VFConstants.appVersion)")
         streamService.scheduleAutoStart()
         registerTerminationHook()
+        installSignalHandlers()
     }
 
     /// On a clean quit, stop streams and record the clean-exit marker so the next
@@ -101,6 +103,32 @@ final class AppState {
                 self?.surfaceService.flushPendingSaves()   // don't lose the last note keystroke
                 self?.virtualDisplayService.markCleanExit()
             }
+        }
+    }
+
+    // Retained so the signal sources aren't deallocated (and cancelled) right
+    // after installSignalHandlers() returns.
+    private var signalSources: [DispatchSourceSignal] = []
+
+    /// SIGTERM/SIGINT -- a `kill`, `pkill`, or script-driven stop, as opposed to
+    /// the menu-bar Quit button or Cmd+Q -- bypass AppKit's termination sequence
+    /// entirely by default: the process is torn down by the kernel before any of
+    /// this app's own code (including registerTerminationHook()'s observer) gets
+    /// to run, so the run is wrongly recorded as an unclean exit and any pending
+    /// debounced Surface-widget save is lost. Ignore the raw signal, then convert
+    /// it into a real terminate(_:) call so the SAME clean-shutdown path — and
+    /// the SAME willTerminateNotification observer above — runs either way.
+    private func installSignalHandlers() {
+        for sig in [SIGTERM, SIGINT] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler {
+                MainActor.assumeIsolated {
+                    NSApplication.shared.terminate(nil)
+                }
+            }
+            source.resume()
+            signalSources.append(source)
         }
     }
 }

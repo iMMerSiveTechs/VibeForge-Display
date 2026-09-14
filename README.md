@@ -186,7 +186,7 @@ VibeForge Display uses macOS's `CGVirtualDisplay` API to create virtual monitors
 - Virtual screens are created via macOS display APIs, not hardware drivers
 - Whether they bypass M1's 1-display limit depends on your specific macOS version
 - This is NOT a hardware hack — it works within macOS capabilities
-- **Routes streams over VibeForge's own transport (LL-HLS), not Apple AirPlay.** AirPlay's sender protocol is closed and single-target; no third-party app can emit AirPlay to multiple TVs. Routes achieves the same result (wireless, different content per TV) a different way.
+- **Routes streams over VibeForge's own transport (HLS over the LAN), not Apple AirPlay.** AirPlay's sender protocol is closed and single-target; no third-party app can emit AirPlay to multiple TVs. Routes achieves the same result (wireless, different content per TV) a different way. It's short-segment HLS, not spec low-latency HLS (no `EXT-X-PART`/`EXT-X-SERVER-CONTROL`) — expect ~6s of live-edge lag on native players (RFC 8216 §6.3.3's three-target-duration rule), fine for a dashboard or a photo wall, not for anything time-sensitive.
 
 ---
 
@@ -242,7 +242,7 @@ Limitation: transport is plain HTTP on the LAN (required for `.local`/AVPlayer).
 - [x] Auto-create on launch (with black-screen crash guard)
 
 ### Slice 2 (Done)
-- [x] Local streaming of virtual screens (LL-HLS over LAN)
+- [x] Local streaming of virtual screens (HLS over LAN)
 - [x] Browser (web) receiver — any device with a browser
 - [x] Apple TV (tvOS) receiver app with Bonjour discovery
 - [x] Quality presets (Low / Balanced / High)

@@ -13,7 +13,7 @@ enum RouteSourceKind: String, Codable, Sendable, CaseIterable, Identifiable {
     var icon: String { self == .virtualScreen ? "display" : "rectangle.on.rectangle.angled" }
 }
 
-/// A Route maps a source to a live LL-HLS stream that receivers (Apple TV app or
+/// A Route maps a source to a live HLS stream that receivers (Apple TV app or
 /// a browser) can play over the local network.
 struct RouteConfig: Identifiable, Codable, Sendable {
     let id: UUID
