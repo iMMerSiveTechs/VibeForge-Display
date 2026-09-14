@@ -19,7 +19,10 @@ enum VFConstants {
         static let httpPort: UInt16 = 8760
         /// Bonjour service type advertised for receiver discovery.
         static let bonjourServiceType = "_vibeforge._tcp"
-        /// Target LL-HLS segment duration in seconds.
+        /// Target HLS segment duration in seconds. Short-segment HLS, not spec
+        /// low-latency HLS (no EXT-X-PART/EXT-X-SERVER-CONTROL) -- a native
+        /// player still won't start within 3 target durations of live (RFC
+        /// 8216 §6.3.3), so real-world lag is closer to ~6s than to "low latency".
         static let segmentDuration: Double = 1.0
         /// How many recent media segments to retain per stream in memory.
         /// Must comfortably exceed a player's live-edge lag (AVPlayer sits ~3

@@ -23,7 +23,12 @@ struct WallPresetsBar: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: VFTheme.Spacing.sm) {
                         ForEach(wallPresetService.presets) { preset in
-                            chip(preset)
+                            WallPresetChip(
+                                preset: preset,
+                                isApplying: applying == preset.id,
+                                onApply: { apply(preset) },
+                                onDelete: { wallPresetService.delete(preset.id) }
+                            )
                         }
                     }
                 }
@@ -57,10 +62,32 @@ struct WallPresetsBar: View {
         }
     }
 
-    private func chip(_ preset: WallPreset) -> some View {
-        Button(action: { apply(preset) }) {
+    private func apply(_ preset: WallPreset) {
+        applying = preset.id
+        Task {
+            await wallPresetService.apply(preset)
+            applying = nil
+            showReport = true
+        }
+    }
+}
+
+// MARK: - Wall Preset Chip
+
+/// One chip in the horizontal strip. Its own struct (like RouteRow) so each
+/// instance carries its own delete-confirmation state, instead of one shared
+/// boolean on the parent that every chip in the ForEach would race over.
+private struct WallPresetChip: View {
+    let preset: WallPreset
+    let isApplying: Bool
+    let onApply: () -> Void
+    let onDelete: () -> Void
+    @State private var showDeleteConfirm = false
+
+    var body: some View {
+        Button(action: onApply) {
             HStack(spacing: VFTheme.Spacing.xs) {
-                if applying == preset.id {
+                if isApplying {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: "play.square")
@@ -86,19 +113,14 @@ struct WallPresetsBar: View {
         .buttonStyle(.plain)
         .contextMenu {
             Button(role: .destructive) {
-                wallPresetService.delete(preset.id)
+                showDeleteConfirm = true
             } label: {
                 Label("Delete Preset", systemImage: "trash")
             }
         }
-    }
-
-    private func apply(_ preset: WallPreset) {
-        applying = preset.id
-        Task {
-            await wallPresetService.apply(preset)
-            applying = nil
-            showReport = true
+        .confirmationDialog("Delete preset “\(preset.name)”?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Delete Preset", role: .destructive, action: onDelete)
+            Button("Cancel", role: .cancel) { }
         }
     }
 }

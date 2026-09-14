@@ -5,7 +5,7 @@ import Darwin
 
 // MARK: - Segment store (thread-safe)
 
-/// Holds the in-memory LL-HLS artifacts for each active stream: one init
+/// Holds the in-memory HLS artifacts for each active stream: one init
 /// segment plus a sliding window of media segments, and generates the playlist.
 /// Accessed from the encoder delegate queue (writes) and the HTTP queue (reads),
 /// so all access is guarded by a lock.

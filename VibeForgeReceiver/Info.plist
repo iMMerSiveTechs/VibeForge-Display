@@ -33,6 +33,17 @@
     <dict>
         <key>NSAllowsLocalNetworking</key>
         <true/>
+        <!-- Apple's own docs on NSAllowsLocalNetworking are inconsistent about
+             whether it alone still covers a typed IP literal (the "Connect by
+             IP" fallback) on iOS/tvOS 17+, which tightened ATS's default IP
+             handling. This is the belt-and-suspenders pairing Apple's own
+             NSAllowsArbitraryLoads docs describe for exactly that ambiguity:
+             newer OS versions honor NSAllowsLocalNetworking and ignore this
+             key, older ones fall back to it. Every request this app makes
+             still only ever goes to a Bonjour-discovered or user-typed LAN
+             host -- this doesn't open a path to the public internet. -->
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
     </dict>
 </dict>
 </plist>
